@@ -80,11 +80,6 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null
           set -o pipefail
           "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-      - name: Install Android SDK platform and build tools
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses >/dev/null
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
