@@ -17,8 +17,8 @@ class ProjectAnalyzerTest {
             )
             val source = File(module, "src/main/java/test/app").apply { mkdirs() }
             File(source, "MainActivity.kt").writeText("package test.app\nclass MainActivity")
-            val manifest = File(module, "src/main").apply { mkdirs() }
-            File(manifest, "AndroidManifest.xml").writeText(
+            val manifestDir = File(module, "src/main").apply { mkdirs() }
+            File(manifestDir, "AndroidManifest.xml").writeText(
                 "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\"><application><activity android:name=\".MainActivity\" android:exported=\"true\" /></application></manifest>"
             )
             val wrapper = File(root, "gradle/wrapper").apply { mkdirs() }
@@ -27,6 +27,7 @@ class ProjectAnalyzerTest {
             val report = ProjectAnalyzer.analyze(root, 5)
             assertEquals(0, report.errorCount)
             assertTrue(report.passCount >= 4)
+            assertTrue(report.issues.any { it.title == "Gradle Wrapper 不完整" && it.severity == Severity.WARNING })
         } finally {
             root.deleteRecursively()
         }

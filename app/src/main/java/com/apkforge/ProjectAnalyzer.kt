@@ -26,11 +26,13 @@ object ProjectAnalyzer {
         val gradleFiles = root.walkTopDown().onEnter { it == root || it.name !in ignored }
             .filter { it.isFile && (it.name == "build.gradle" || it.name == "build.gradle.kts") }.toList()
         val appBuild = gradleFiles.firstOrNull {
-            val text = it.readTextSafe()
-            text.contains("com.android.application") || text.contains("com.android.library")
+            val body = it.readTextSafe()
+            body.contains("com.android.application") ||
+                Regex("""alias\s*\(\s*libs\.plugins\.[\w.]*android[\w.]*application""", RegexOption.IGNORE_CASE).containsMatchIn(body) ||
+                body.contains("androidApplication")
         }
         if (appBuild == null) issues += ProjectIssue("GRADLE_REPAIR", Severity.ERROR,
-            "没有识别到 Android 模块", "未发现 com.android.application 或 com.android.library 插件声明。")
+            "没有识别到 Android 应用模块", "未发现 com.android.application 插件声明。若使用 Version Catalog 插件别名，请检查 libs.versions.toml 和模块 plugins 区块。")
         else {
             issues += ProjectIssue("GRADLE_REPAIR", Severity.PASS, "已识别 Android 模块",
                 "找到 Android Gradle 插件声明。", appBuild.relativeTo(root).path)
@@ -66,12 +68,19 @@ object ProjectAnalyzer {
         else issues += ProjectIssue("SOURCE_COMPLETION", Severity.PASS, "已发现主源码",
             "找到 ${sourceFiles.size} 个 Kotlin/Java 主源码文件。")
 
-        val wrapper = File(root, "gradle/wrapper/gradle-wrapper.properties")
-        if (!wrapper.isFile) issues += ProjectIssue("GRADLE_REPAIR", Severity.WARNING,
-            "缺少 Gradle Wrapper 配置", "建议补齐与 Android Gradle Plugin 兼容的 Wrapper。")
-        else issues += ProjectIssue("GRADLE_REPAIR", Severity.PASS, "Gradle Wrapper 配置存在",
-            wrapper.readTextSafe().lineSequence().firstOrNull { it.startsWith("distributionUrl=") } ?: "未找到 distributionUrl。",
-            wrapper.relativeTo(root).path)
+        val wrapperProperties = File(root, "gradle/wrapper/gradle-wrapper.properties")
+        val wrapperJar = File(root, "gradle/wrapper/gradle-wrapper.jar")
+        val wrapperScript = File(root, "gradlew")
+        if (!wrapperProperties.isFile || !wrapperJar.isFile || !wrapperScript.isFile) {
+            val absent = listOf(
+                "gradle-wrapper.properties" to wrapperProperties,
+                "gradle-wrapper.jar" to wrapperJar,
+                "gradlew" to wrapperScript
+            ).filter { !it.second.isFile }.joinToString { it.first }
+            issues += ProjectIssue("GRADLE_REPAIR", Severity.WARNING, "Gradle Wrapper 不完整",
+                "缺少：$absent。可由构建环境安装指定 Gradle，或补齐完整 Wrapper 文件。")
+        } else issues += ProjectIssue("GRADLE_REPAIR", Severity.PASS, "Gradle Wrapper 文件齐全",
+            "Wrapper 配置、启动脚本和 JAR 均存在。", "gradle/wrapper/gradle-wrapper.properties")
 
         if (File(root, "local.properties").isFile)
             issues += ProjectIssue("PROJECT_SCAN", Severity.WARNING, "工程包含 local.properties",
