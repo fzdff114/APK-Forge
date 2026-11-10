@@ -70,7 +70,7 @@ Commands:
 ## Guardrails
 
 - Never place AI API credentials, GitHub tokens, keystores, private keys, local.properties, or machine-specific paths in commits.
-- Never upload a user's source to a public repository. Use a Private repository for remote builds.
+- Never upload or commit a user's app source to a Public repository. This APK-Forge repository is currently Public and is for reusable tools only; place generated app source in a separate Private repository or a local workspace. The remote AI project build workflow refuses Public repositories.
 - Never run arbitrary AI-generated shell scripts. Use the documented tools and known Gradle tasks.
 - A Gradle build can execute arbitrary project build logic. Review untrusted projects and obtain approval before building.
 - The scan tool is heuristic, not a compiler. A zero-error scan does not prove that an APK builds.

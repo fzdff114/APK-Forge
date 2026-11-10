@@ -48,7 +48,7 @@ python3 tools/apkforge.py scaffold --name "Offline Notes" --package com.example.
 
 ## Build using GitHub Actions
 
-The workflow .github/workflows/ai-project-build.yml can build generated-project/ after the agent commits the project. Open GitHub Actions, select “Build AI generated Android project”, choose the project directory, and run it. The APK is uploaded as an artifact.
+The workflow .github/workflows/ai-project-build.yml can build generated-project/ after the agent commits the project. It checks that the selected repository is Private and refuses Public repositories. The current fzdff114/APK-Forge repository is Public, so use a separate Private repository for private app source. Open GitHub Actions there, select “Build AI generated Android project”, choose the project directory, and run it. The APK is uploaded as an artifact.
 
 Alternatively, the agent can run apkforge.py build in a prepared build environment. The workflow uses JDK 17 and Android SDK 35.
 
