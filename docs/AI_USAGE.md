@@ -1,58 +1,63 @@
-# AI 生成与构建使用说明
+# How AI agents use APK Forge tools
 
-APK Forge 使用 OpenAI-compatible Chat Completions 接口调用你自行选择的 AI 服务。它不会强制指定模型，也不要求安装 Google Play 服务。
+## Important distinction
 
-## 1. 准备 AI 接口
+AI functionality lives in the GitHub repository as scripts and agent instructions. The APK Forge Android app itself does not contain an AI chat screen, AI API endpoint, model selector or AI API key field. The AI coding agent connected to this repository is the caller of the repository tools.
 
-在 APK Forge 的 AI 设置中填写：
+## Set up an AI coding agent
 
-- API Endpoint：完整的 Chat Completions 地址，例如 https://api.openai.com/v1/chat/completions；其他厂商请填写该厂商兼容的完整地址。
-- Model：填写你账号实际可用的模型 ID。应用不替你固定模型名称。
-- API Key：填写该服务提供的密钥。
+Open this repository in an AI coding environment that can read files and run terminal commands. The agent should read AGENTS.md automatically. If it does not, explicitly tell it:
 
-点击“保存 AI 配置”。API Key 使用 Android Keystore 中的 AES-GCM 密钥加密后保存在应用私有设置中。不要把密钥发给其他人，也不要写进工程文件。
+~~~text
+Read AGENTS.md and tools/README.md. Use the repository's apkforge.py tools to create, inspect, repair, build and verify Android projects. Keep generated app code under generated-project/ and do not add AI API configuration to the APK Forge Android app.
+~~~
 
-## 2. 从一句话生成 APK 工程
+## Generate a new Android app
 
-1. 打开 APK Forge，进入“描述 App 需求”。
-2. 输入要制作的应用，例如：制作一个离线记账 App，支持分类、月度统计、导出 CSV，使用 Material 3，数据保存在本机。
-3. 点击“AI 从需求新建完整 App 工程”。
-4. 等待 AI 返回工程文件清单。此时文件尚未写入工程，也没有开始编译。
-5. 检查 AI 摘要、文件路径和注意事项，点击“检查并应用 AI 文件”。
-6. APK Forge 将文件写入新的应用工程目录，并重新扫描 Gradle、Manifest 和源码。
-7. 配置 Private GitHub 构建仓库，点击“开始远程构建 APK”。
-8. GitHub Actions 返回真实构建结果后，APK Forge 下载 APK，并让你选择保存位置。
+1. Tell the AI what application to create, including screens, behaviors, data storage, permissions, device/Android version constraints and network requirements.
+2. The AI calls scaffold to create a complete Gradle project skeleton.
+3. The AI writes real app implementation files into generated-project/.
+4. The AI calls scan and fixes structural errors.
+5. After reviewing build scripts and obtaining build authorization, the AI calls build.
+6. The AI calls verify and reports the actual APK path and SHA-256.
 
-## 3. 修复现有 AI 工程
+Example:
 
-1. 点击“导入已有 Android 工程 ZIP”，选择完整 Android Studio 项目。
-2. 查看工程扫描报告。
-3. 在需求输入框描述错误现象或要补充的功能。
-4. 点击“AI 修复 / 扩展当前工程”。
-5. 检查本次 AI 提议的修改文件，再点击“检查并应用 AI 文件”。
-6. 重新扫描并执行远程构建。
+~~~sh
+python3 tools/apkforge.py scaffold --name "Offline Notes" --package com.example.offlinenotes --output generated-project
+~~~
 
-AI 会读取工程中的部分 Gradle、Manifest、Kotlin/Java 和资源文本内容。只有你主动点击 AI 生成或修复后，这些内容才会发送到所填写的 AI 服务。不要导入或发送含有密码、令牌、签名密钥、私钥或客户数据的工程。
+## Repair an existing AI-generated project
 
-## 4. AI 构建关键词
+1. Put the project in generated-project/ or give the agent its exact path.
+2. Ask the agent to inspect the project and run scan.
+3. Ask it to read the report and generate a repair plan; prompt assembles findings and selected project context.
+4. The agent fixes missing or inconsistent files without overwriting unrelated features.
+5. It rebuilds and verifies the output APK.
 
-- PROJECT_SCAN：扫描模块、入口、源码和资源。
-- APP_REQUIREMENTS：把自然语言需求拆成功能和页面。
-- PROJECT_SCAFFOLD：创建完整工程骨架。
-- DEPENDENCY_CHECK：检查依赖是否真实存在、版本是否相容。
-- MANIFEST_REPAIR：检查组件、权限和 exported。
-- GRADLE_REPAIR：修复插件、Wrapper、仓库和模块配置。
-- SOURCE_COMPLETION：补齐真实业务逻辑，不允许空类占位。
-- RESOURCE_CHECK：检查资源文件和引用 ID。
-- SDK_COMPATIBILITY：检查 JDK、Gradle、AGP、Kotlin 和 SDK 版本关系。
-- BUILD_VALIDATION：根据真实 Gradle 构建结果验证。
-- BUILD_ERROR_REPAIR：定位真实编译错误并提出源文件修复。
-- APK_EXPORT：检查 APK 文件是否实际生成。
+## Tool commands
 
-## 5. 安全与能力边界
+| Tool | What AI uses it for |
+|---|---|
+| scaffold | Create a real Android project skeleton |
+| scan | Find likely structural/build blockers |
+| prompt | Give AI project-specific repair context |
+| build | Compile with Gradle and locate the APK |
+| verify | Check APK archive, Manifest, dex and SHA-256 |
+| archive | Package source safely for a remote build |
 
-AI 返回的文件先显示预览，只有你点击应用后才写入磁盘。应用会拒绝绝对路径、路径穿越、签名文件、本机 SDK 配置和 Gradle Wrapper 二进制，并保留被覆盖文本文件的备份。
+## Build using GitHub Actions
 
-APK Forge 不会执行 AI 输出的任意 Shell 命令。Gradle 构建脚本本身可能执行项目代码，所以只构建你信任并已审查的工程。AI 生成代码也可能有错误；成功写入文件不代表 APK 已编译成功。只有 GitHub Actions 构建成功且 APK Artifact 已下载，才算完成 APK 构建。
+The workflow .github/workflows/ai-project-build.yml can build generated-project/ after the agent commits the project. Open GitHub Actions, select “Build AI generated Android project”, choose the project directory, and run it. The APK is uploaded as an artifact.
 
-远程构建需要使用 Private GitHub 仓库。当前公开的 fzdff114/APK-Forge 仓库不能作为私有源码的构建上传目标。
+Alternatively, the agent can run apkforge.py build in a prepared build environment. The workflow uses JDK 17 and Android SDK 35.
+
+## What AI must not do
+
+- Do not claim a ZIP, source folder, or generated code is an APK.
+- Do not claim success when Gradle failed or when no APK artifact exists.
+- Do not create empty files just to silence scan warnings.
+- Do not silently change application ID or remove existing features.
+- Do not place AI API keys, signing files, or local SDK paths in the repository.
+- Do not upload private project source to a Public GitHub repository.
+- Do not put AI API settings or AI code generation UI inside the APK Forge Android app.
