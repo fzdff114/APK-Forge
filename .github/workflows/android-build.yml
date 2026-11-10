@@ -1,0 +1,85 @@
+name: Build Android project
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_zip_path:
+        description: Repository path to the uploaded project ZIP
+        required: true
+        default: .apkforge/input.zip
+      artifact_name:
+        description: Name for the APK artifact
+        required: true
+        default: apkforge-debug-apk
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout APK Forge repository
+        uses: actions/checkout@v4
+      - name: Validate and extract project archive
+        id: project
+        shell: bash
+        run: |
+          ZIP_PATH="${{ inputs.source_zip_path }}"
+          test -f "$ZIP_PATH" || { echo "::error::Project ZIP not found: $ZIP_PATH"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/apkforge-project"
+          python3 - "$ZIP_PATH" "$RUNNER_TEMP/apkforge-project" <<'PY'
+          import pathlib, sys, zipfile
+          archive, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]).resolve()
+          total = 0
+          with zipfile.ZipFile(archive) as zf:
+              infos = zf.infolist()
+              if len(infos) > 8000: raise SystemExit("Archive contains too many entries")
+              for info in infos:
+                  name = pathlib.PurePosixPath(info.filename)
+                  if name.is_absolute() or ".." in name.parts: raise SystemExit("Unsafe ZIP path")
+                  total += info.file_size
+                  if total > 512 * 1024 * 1024: raise SystemExit("Expanded ZIP exceeds 512 MiB")
+                  dest = (target / info.filename).resolve()
+                  if target not in dest.parents and dest != target: raise SystemExit("ZIP path escaped destination")
+                  if info.is_dir(): dest.mkdir(parents=True, exist_ok=True)
+                  else:
+                      dest.parent.mkdir(parents=True, exist_ok=True)
+                      with zf.open(info) as src, dest.open("wb") as dst:
+                          while True:
+                              chunk = src.read(1024 * 1024)
+                              if not chunk: break
+                              dst.write(chunk)
+          PY
+          ROOT="$(find "$RUNNER_TEMP/apkforge-project" -maxdepth 6 \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit | xargs -r dirname)"
+          test -n "$ROOT" || { echo "::error::No settings.gradle(.kts) found in archive"; exit 1; }
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build debug APK
+        working-directory: ${{ steps.project.outputs.root }}
+        shell: bash
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew --no-daemon assembleDebug --stacktrace
+          else
+            gradle --no-daemon assembleDebug --stacktrace
+          fi
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ steps.project.outputs.root }}/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 7
