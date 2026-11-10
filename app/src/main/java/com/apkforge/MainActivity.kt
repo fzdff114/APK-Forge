@@ -25,11 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,16 +44,22 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ApkForgeScreen() {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
+    val saved = remember { BuildSettingsStore.load(context) }
+    var owner by remember { mutableStateOf(saved.owner) }
+    var repository by remember { mutableStateOf(saved.repository) }
+    var token by remember { mutableStateOf(saved.token) }
     var report by remember { mutableStateOf<ProjectReport?>(null) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("导入 AI 生成的 Android 工程 ZIP，先检查再构建。") }
     var prompt by remember { mutableStateOf("") }
+    var pendingApk by remember { mutableStateOf<File?>(null) }
 
-    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             busy = true
             status = "正在安全解压并分析工程…"
-            (context as? ComponentActivity)?.lifecycleScope?.launch {
+            activity?.lifecycleScope?.launch {
                 val result = withContext(Dispatchers.IO) {
                     runCatching {
                         val imported = ZipProjectImporter.import(context, uri)
@@ -71,24 +79,38 @@ private fun ApkForgeScreen() {
         }
     }
 
+    val saveApkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")
+    ) { uri: Uri? ->
+        val source = pendingApk
+        if (uri != null && source != null) {
+            val savedResult = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    source.inputStream().buffered().use { input -> input.copyTo(output) }
+                } ?: error("无法写入选定位置")
+            }
+            status = if (savedResult.isSuccess) "APK 已保存到你选择的位置。"
+                else "保存失败：${savedResult.exceptionOrNull()?.message ?: "未知错误"}"
+        }
+        pendingApk = null
+    }
+
     MaterialTheme(colorScheme = lightColorScheme(
         primary = Color(0xFF246BFD), secondary = Color(0xFF12A8A0),
         background = Color(0xFFF5F7FC), surface = Color.White
     )) {
-        Scaffold(
-            topBar = {
-                TopAppBar(title = {
-                    Column {
-                        Text("APK Forge", fontWeight = FontWeight.Bold)
-                        Text("AI 工程检查与 APK 构建助手", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }, navigationIcon = {
-                    Icon(Icons.Default.Android, contentDescription = null,
-                        modifier = Modifier.padding(horizontal = 14.dp), tint = MaterialTheme.colorScheme.primary)
-                })
-            }
-        ) { padding ->
+        Scaffold(topBar = {
+            TopAppBar(title = {
+                Column {
+                    Text("APK Forge", fontWeight = FontWeight.Bold)
+                    Text("AI 工程检查与 APK 构建助手", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }, navigationIcon = {
+                Icon(Icons.Default.Android, contentDescription = null,
+                    modifier = Modifier.padding(horizontal = 14.dp), tint = MaterialTheme.colorScheme.primary)
+            })
+        }) { padding ->
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -102,7 +124,7 @@ private fun ApkForgeScreen() {
                             Text("扫描 AI 工程中的 Gradle、Manifest、依赖、源码和资源问题，生成可直接交给 AI 的修复指令。",
                                 color = Color(0xFFD8E2F5), style = MaterialTheme.typography.bodyMedium)
                             Button(onClick = {
-                                importer.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                                importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                             }, modifier = Modifier.fillMaxWidth(), enabled = !busy) {
                                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                                 Text("  导入工程 ZIP")
@@ -110,6 +132,36 @@ private fun ApkForgeScreen() {
                         }
                     }
                 }
+
+                item {
+                    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("GitHub 云端构建配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("默认使用你创建的 APK-Forge 仓库。需要启用 Actions，并提供仅对此仓库授权的 Fine-grained Token。",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedTextField(owner, { owner = it }, label = { Text("仓库所有者") },
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(repository, { repository = it }, label = { Text("仓库名称") },
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                            OutlinedTextField(token, { token = it }, label = { Text("GitHub Personal Access Token") },
+                                singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth())
+                            OutlinedButton(onClick = {
+                                if (owner.isBlank() || repository.isBlank()) {
+                                    status = "请填写 GitHub 用户名和仓库名称。"
+                                } else {
+                                    BuildSettingsStore.save(context, owner, repository, token)
+                                    status = "仓库配置已保存；Token 已使用 Android Keystore 加密保存。"
+                                }
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Text("保存构建配置")
+                            }
+                            Text("Token 权限：Contents 读写、Actions 读写。工程仅在点击远程构建后上传，构建完成后会删除临时 ZIP。",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
                 item {
                     Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically,
@@ -120,6 +172,7 @@ private fun ApkForgeScreen() {
                         }
                     }
                 }
+
                 val current = report
                 if (current != null) {
                     item {
@@ -154,7 +207,40 @@ private fun ApkForgeScreen() {
                         }
                     }
                     item {
-                        Text("当前版本完成本地诊断与 AI 指令生成；手机端远程构建上传功能尚未接入。",
+                        Button(
+                            onClick = {
+                                if (token.isBlank()) {
+                                    status = "请先填写并保存 GitHub Token。"
+                                } else {
+                                    BuildSettingsStore.save(context, owner, repository, token)
+                                    busy = true
+                                    activity?.lifecycleScope?.launch {
+                                        val result = runCatching {
+                                            GitHubActionsClient.buildAndDownload(
+                                                owner.trim(), repository.trim(), token, current, context.cacheDir
+                                            ) { message ->
+                                                withContext(Dispatchers.Main) { status = message }
+                                            }
+                                        }
+                                        result.onSuccess { apk ->
+                                            pendingApk = apk
+                                            status = "云端编译成功，请选择 APK 保存位置。"
+                                            saveApkLauncher.launch(apk.name)
+                                        }.onFailure {
+                                            status = "构建失败：${it.message ?: "未知错误"}"
+                                        }
+                                        busy = false
+                                    }
+                                }
+                            },
+                            enabled = !busy && token.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (busy) "正在构建…" else "开始远程构建 APK")
+                        }
+                    }
+                    item {
+                        Text("构建通过你配置的 GitHub Actions 仓库执行。请勿使用不受你控制的仓库或 Token 构建敏感工程。",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 24.dp))
