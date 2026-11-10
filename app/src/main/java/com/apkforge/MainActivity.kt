@@ -3,6 +3,7 @@ package com.apkforge
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -44,7 +45,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ApkForgeScreen() {
     val context = LocalContext.current
-    val activity = context as? ComponentActivity
+    val activity = context.findActivity()
     val saved = remember { BuildSettingsStore.load(context) }
     var owner by remember { mutableStateOf(saved.owner) }
     var repository by remember { mutableStateOf(saved.repository) }
@@ -137,7 +138,7 @@ private fun ApkForgeScreen() {
                     Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("GitHub 云端构建配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("默认使用你创建的 APK-Forge 仓库。需要启用 Actions，并提供仅对此仓库授权的 Fine-grained Token。",
+                            Text("目标仓库必须是 Private，并启用 Actions。你当前的 APK-Forge 仓库是 Public，应用会拒绝向公开仓库上传工程源码。",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedTextField(owner, { owner = it }, label = { Text("仓库所有者") },
                                 singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -150,13 +151,13 @@ private fun ApkForgeScreen() {
                                 if (owner.isBlank() || repository.isBlank()) {
                                     status = "请填写 GitHub 用户名和仓库名称。"
                                 } else {
-                                    BuildSettingsStore.save(context, owner, repository, token)
-                                    status = "仓库配置已保存；Token 已使用 Android Keystore 加密保存。"
+                                    val savedResult = runCatching { BuildSettingsStore.save(context, owner, repository, token) }
+                                    status = if (savedResult.isSuccess) "仓库配置已保存；Token 已使用 Android Keystore 加密保存。" else "保存失败：${savedResult.exceptionOrNull()?.message ?: "未知错误"}"
                                 }
                             }, modifier = Modifier.fillMaxWidth()) {
                                 Text("保存构建配置")
                             }
-                            Text("Token 权限：Contents 读写、Actions 读写。工程仅在点击远程构建后上传，构建完成后会删除临时 ZIP。",
+                            Text("Fine-grained Token 权限：Contents 读写、Actions 读写。每次构建使用临时分支，结束后删除；工程 ZIP 限制 12 MiB。",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -212,7 +213,10 @@ private fun ApkForgeScreen() {
                                 if (token.isBlank()) {
                                     status = "请先填写并保存 GitHub Token。"
                                 } else {
-                                    BuildSettingsStore.save(context, owner, repository, token)
+                                    runCatching { BuildSettingsStore.save(context, owner, repository, token) }.getOrElse {
+                                        status = "无法保存构建设置：${it.message ?: "未知错误"}"
+                                        return@Button
+                                    }
                                     busy = true
                                     activity?.lifecycleScope?.launch {
                                         val result = runCatching {
@@ -292,4 +296,11 @@ private fun IssueCard(issue: ProjectIssue) {
             issue.file?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
         }
     }
+}
+
+
+private tailrec fun Context.findActivity(): ComponentActivity? = when (this) {
+    is ComponentActivity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

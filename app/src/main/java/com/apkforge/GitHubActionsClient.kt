@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.time.Instant
 import java.util.zip.ZipInputStream
 
@@ -27,74 +28,96 @@ object GitHubActionsClient {
             "请输入 GitHub Personal Access Token"
         }
 
+        val base = "$API/repos/$owner/$repository"
+        val repoResponse = request("GET", base, token)
+        require(repoResponse.code == 200) { apiError("无法读取目标仓库", repoResponse) }
+        val repoInfo = JSONObject(repoResponse.body)
+        require(repoInfo.optBoolean("private")) {
+            "出于源码隐私保护，APK Forge 拒绝向 Public 仓库上传工程。请新建或选择 Private 仓库。"
+        }
+        val defaultBranch = repoInfo.optString("default_branch", "main")
+        val encodedBranch = URLEncoder.encode(defaultBranch, "UTF-8").replace("+", "%20")
+
         val folder = File(cacheDir, "remote-build").apply { mkdirs() }
         val sourceZip = File(folder, "project-${System.currentTimeMillis()}.zip")
         ProjectArchive.create(project.root, sourceZip)
-        val uploadPath = ".apkforge/uploads/${sourceZip.name}"
-        val artifactName = "apkforge-debug-${System.currentTimeMillis()}"
-        val base = "$API/repos/$owner/$repository"
         val start = System.currentTimeMillis()
-        var uploadedSha: String? = null
+        val buildBranch = "apkforge-build-$start"
+        val uploadPath = ".apkforge/uploads/${sourceZip.name}"
+        val artifactName = "apkforge-debug-$start"
+        var branchCreated = false
+        var dispatchAccepted = false
+        var runFinished = false
 
         try {
+            onStatus("目标仓库为 Private，正在创建临时构建分支…")
+            val mainRef = request("GET", "$base/git/ref/heads/$encodedBranch", token)
+            require(mainRef.code == 200) { apiError("读取默认分支失败", mainRef) }
+            val baseSha = JSONObject(mainRef.body).getJSONObject("object").getString("sha")
+            val branchBody = JSONObject().put("ref", "refs/heads/$buildBranch").put("sha", baseSha)
+            val branchResponse = request("POST", "$base/git/refs", token, branchBody.toString())
+            require(branchResponse.code == 201) { apiError("创建临时分支失败", branchResponse) }
+            branchCreated = true
+
             onStatus("正在准备工程压缩包：${sourceZip.length() / 1024} KB")
-            val payload = JSONObject()
-                .put("message", "APK Forge: upload temporary Android project")
-                .put("branch", "main")
+            val uploadBody = JSONObject()
+                .put("message", "APK Forge: temporary Android project upload")
+                .put("branch", buildBranch)
                 .put("content", Base64.encodeToString(sourceZip.readBytes(), Base64.NO_WRAP))
-            onStatus("正在上传工程到 $owner/$repository …")
-            val upload = request("PUT", "$base/contents/$uploadPath", token, payload.toString())
+            onStatus("正在上传到临时私有分支…")
+            val upload = request("PUT", "$base/contents/$uploadPath", token, uploadBody.toString())
             require(upload.code in 200..201) { apiError("上传工程失败", upload) }
-            uploadedSha = JSONObject(upload.body).getJSONObject("content").getString("sha")
 
             onStatus("工程已上传，启动 GitHub Actions 编译…")
-            val dispatchBody = JSONObject().put("ref", "main").put(
+            val dispatchBody = JSONObject().put("ref", buildBranch).put(
                 "inputs", JSONObject().put("source_zip_path", uploadPath).put("artifact_name", artifactName)
             )
             val dispatch = request("POST", "$base/actions/workflows/android-build.yml/dispatches", token, dispatchBody.toString())
             require(dispatch.code == 204) { apiError("启动云端构建失败", dispatch) }
+            dispatchAccepted = true
 
             onStatus("已启动构建，等待 GitHub runner…")
             val since = Instant.ofEpochMilli(start - 120_000L)
             var run: JSONObject? = null
-            for (i in 0 until 40) {
-                val list = request("GET", "$base/actions/runs?branch=main&event=workflow_dispatch&per_page=20", token)
+            for (i in 0 until 60) {
+                val list = request("GET", "$base/actions/runs?branch=$buildBranch&event=workflow_dispatch&per_page=20", token)
                 require(list.code == 200) { apiError("读取构建任务失败", list) }
                 val runs = JSONObject(list.body).optJSONArray("workflow_runs") ?: JSONArray()
                 run = (0 until runs.length()).mapNotNull { runs.optJSONObject(it) }
                     .filter {
                         it.optString("event") == "workflow_dispatch" &&
-                            it.optString("name") == "Build Android project" &&
+                            it.optString("head_branch") == buildBranch &&
                             runCatching { Instant.parse(it.optString("created_at")).isAfter(since) }.getOrDefault(false)
                     }.maxByOrNull { it.optLong("id") }
                 if (run != null) break
                 delay(2000)
             }
             val selectedRun = requireNotNull(run) {
-                "GitHub 接受了构建请求，但没有返回运行记录。请检查仓库 Actions 页面。"
+                "GitHub 已接受构建请求，但没有返回运行记录。临时分支保留以便排查，请检查 Actions 页面。"
             }
             val runId = selectedRun.getLong("id")
             val runUrl = selectedRun.optString("html_url")
             var completed: JSONObject? = null
-            for (i in 0 until 540) {
+            for (i in 0 until 720) {
                 val state = request("GET", "$base/actions/runs/$runId", token)
                 require(state.code == 200) { apiError("读取构建状态失败", state) }
                 val current = JSONObject(state.body)
                 if (current.optString("status") == "completed") {
                     completed = current
+                    runFinished = true
                     break
                 }
                 onStatus("云端正在编译 APK…（任务 #$runId）")
                 delay(5000)
             }
-            val result = requireNotNull(completed) { "云端构建等待超时。任务地址：$runUrl" }
+            val result = requireNotNull(completed) { "云端构建等待超时。临时分支保留以便排查。任务地址：$runUrl" }
             if (result.optString("conclusion") != "success")
                 throw IllegalStateException("云端构建结果：${result.optString("conclusion")}。任务地址：$runUrl")
 
             onStatus("编译成功，正在下载 APK…")
-            val response = request("GET", "$base/actions/runs/$runId/artifacts", token)
-            require(response.code == 200) { apiError("读取构建产物失败", response) }
-            val artifacts = JSONObject(response.body).optJSONArray("artifacts") ?: JSONArray()
+            val artifactsResponse = request("GET", "$base/actions/runs/$runId/artifacts", token)
+            require(artifactsResponse.code == 200) { apiError("读取构建产物失败", artifactsResponse) }
+            val artifacts = JSONObject(artifactsResponse.body).optJSONArray("artifacts") ?: JSONArray()
             val artifact = (0 until artifacts.length()).mapNotNull { artifacts.optJSONObject(it) }
                 .firstOrNull { it.optString("name") == artifactName && !it.optBoolean("expired") }
                 ?: throw IllegalStateException("构建成功，但没有找到 APK Artifact。任务地址：$runUrl")
@@ -109,45 +132,41 @@ object GitHubActionsClient {
             onStatus("APK 已生成：${finalApk.name}（${finalApk.length() / 1024} KB）")
             finalApk
         } finally {
-            uploadedSha?.let { deleteUpload(base, uploadPath, token, it) }
+            if (branchCreated && (!dispatchAccepted || runFinished)) deleteBranch(base, buildBranch, token)
             sourceZip.delete()
         }
     }
 
     private fun request(method: String, url: String, token: String, body: String? = null): HttpResult {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.requestMethod = method
-        c.connectTimeout = 20_000
-        c.readTimeout = 60_000
-        c.setRequestProperty("Accept", "application/vnd.github+json")
-        c.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-        c.setRequestProperty("Authorization", "Bearer $token")
-        c.setRequestProperty("User-Agent", "APK-Forge-Android")
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.requestMethod = method
+        connection.connectTimeout = 20_000
+        connection.readTimeout = 60_000
+        connection.setRequestProperty("Accept", "application/vnd.github+json")
+        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        connection.setRequestProperty("Authorization", "Bearer $token")
+        connection.setRequestProperty("User-Agent", "APK-Forge-Android")
         try {
             if (body != null) {
-                c.doOutput = true
-                c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             }
-            val code = c.responseCode
-            val stream = if (code in 200..299) c.inputStream else c.errorStream
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             return HttpResult(code, stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "")
         } finally {
-            c.disconnect()
+            connection.disconnect()
         }
     }
 
     private fun apiError(title: String, result: HttpResult): String {
-        val detail = runCatching { JSONObject(result.body).optString("message") }.getOrDefault("")
-        return "$title（HTTP ${result.code}）：${detail.ifBlank { result.body.take(300) }}"
+        val message = runCatching { JSONObject(result.body).optString("message") }.getOrDefault("")
+        return "$title（HTTP ${result.code}）：${message.ifBlank { result.body.take(300) }}"
     }
 
-    private fun deleteUpload(base: String, path: String, token: String, sha: String) {
-        runCatching {
-            val body = JSONObject().put("message", "APK Forge: delete temporary project ZIP")
-                .put("sha", sha).put("branch", "main").toString()
-            request("DELETE", "$base/contents/$path", token, body)
-        }
+    private fun deleteBranch(base: String, branch: String, token: String) {
+        runCatching { request("DELETE", "$base/git/refs/heads/$branch", token) }
     }
 
     private fun downloadArtifact(url: String, token: String, destination: File) {
@@ -163,27 +182,40 @@ object GitHubActionsClient {
             target = if (code in 300..399) first.getHeaderField("Location") ?: error("Artifact 下载地址为空")
                 else if (code in 200..299) url else error("Artifact 下载失败（HTTP $code）")
             if (code in 200..299) {
-                first.inputStream.use { input -> destination.outputStream().buffered().use { input.copyTo(it) } }
+                var total = 0L
+                first.inputStream.buffered().use { input ->
+                    destination.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(128 * 1024)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            total += n
+                            require(total <= MAX_ARTIFACT_BYTES) { "Artifact 超过 1 GiB 安全上限" }
+                            output.write(buffer, 0, n)
+                        }
+                    }
+                }
                 return
             }
         } finally {
             first.disconnect()
         }
+
         val redirected = URL(target).openConnection() as HttpURLConnection
         redirected.connectTimeout = 20_000
         redirected.readTimeout = 120_000
         try {
             require(redirected.responseCode in 200..299) { "Artifact 文件下载失败（HTTP ${redirected.responseCode}）" }
-            var bytes = 0L
+            var total = 0L
             redirected.inputStream.buffered().use { input ->
                 destination.outputStream().buffered().use { output ->
                     val buffer = ByteArray(128 * 1024)
                     while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        bytes += count
-                        require(bytes <= MAX_ARTIFACT_BYTES) { "Artifact 超过 1 GiB 安全上限" }
-                        output.write(buffer, 0, count)
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        total += n
+                        require(total <= MAX_ARTIFACT_BYTES) { "Artifact 超过 1 GiB 安全上限" }
+                        output.write(buffer, 0, n)
                     }
                 }
             }
@@ -194,7 +226,7 @@ object GitHubActionsClient {
 
     private fun extractArtifact(zipFile: File, destination: File) {
         val prefix = destination.canonicalPath + File.separator
-        var count = 0
+        var entries = 0
         var total = 0L
         ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
             while (true) {
@@ -202,17 +234,17 @@ object GitHubActionsClient {
                 val out = File(destination, entry.name)
                 require(out.canonicalPath.startsWith(prefix)) { "Artifact ZIP 包含越界路径" }
                 if (entry.isDirectory) out.mkdirs() else {
-                    count++
-                    require(count <= 1000) { "Artifact 文件数量异常" }
+                    entries++
+                    require(entries <= 1000) { "Artifact 文件数量异常" }
                     out.parentFile?.mkdirs()
                     out.outputStream().buffered().use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
-                            val n = zip.read(buffer)
-                            if (n < 0) break
-                            total += n
+                            val count = zip.read(buffer)
+                            if (count < 0) break
+                            total += count
                             require(total <= MAX_ARTIFACT_BYTES) { "Artifact 解压内容超过 1 GiB" }
-                            output.write(buffer, 0, n)
+                            output.write(buffer, 0, count)
                         }
                     }
                 }
