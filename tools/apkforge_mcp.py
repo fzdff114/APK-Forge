@@ -8,10 +8,11 @@ GitHub Actions to build an APK.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
+import io
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -240,6 +241,16 @@ TOOLS = [
         },
     },
     {
+        "name": "delete_file",
+        "description": "Delete one workspace source/configuration file. Requires confirm=true. Credential, local SDK and signing-key files are protected.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "confirm": {"type": "boolean"}},
+            "required": ["path", "confirm"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "search_code",
         "description": "Search source/configuration text within the workspace. Returns file paths, line numbers and matching lines.",
         "inputSchema": {
@@ -334,6 +345,16 @@ class ApkForgeMcpServer:
             return self.workspace.write_file(args["path"], args["content"])
         if name == "edit_file":
             return self.workspace.edit_file(args["path"], args["old_text"], args["new_text"], args.get("replace_all", False))
+        if name == "delete_file":
+            if args.get("confirm") is not True:
+                raise PermissionError("Deletion refused; set confirm=true after reviewing the target file.")
+            path = self.workspace.resolve(args["path"])
+            if is_sensitive(path):
+                raise PermissionError("Deleting credential or signing-key files through the agent is blocked.")
+            if not path.is_file():
+                raise FileNotFoundError(args["path"])
+            path.unlink()
+            return {"path": args["path"], "deleted": True}
         if name == "search_code":
             return self.workspace.search(args["query"], args.get("glob", "**/*"), args.get("limit", 100))
         if name == "analyze_project":
@@ -344,9 +365,21 @@ class ApkForgeMcpServer:
             if args.get("allow_project_code") is not True:
                 raise PermissionError("Build refused: review the project's Gradle scripts and set allow_project_code=true.")
             root = self.workspace.resolve(args["path"])
-            result = apkforge.build(root, args.get("timeout_seconds", 3600), True, args.get("allow_scan_errors", False))
+            captured = io.StringIO()
+            try:
+                # apkforge.build prints status text; capture it so stdout remains a clean MCP stream.
+                with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                    result = apkforge.build(root, args.get("timeout_seconds", 3600), True, args.get("allow_scan_errors", False))
+            except subprocess.CalledProcessError as exc:
+                logs = sorted((root / ".apkforge" / "logs").glob("build-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+                tail = ""
+                if logs:
+                    tail = "\\n".join(logs[0].read_text(encoding="utf-8", errors="replace").splitlines()[-180:])
+                raise RuntimeError(f"Local Gradle build failed (exit {exc.returncode}).\\n{captured.getvalue()}\\n{tail}") from exc
             result["apk"]["path"] = Path(result["apk"]["apk"]).relative_to(self.workspace.root).as_posix()
+            result["apk"].pop("apk", None)
             result["log"] = Path(result["log"]).relative_to(self.workspace.root).as_posix()
+            result["console_output"] = captured.getvalue()
             return result
         if name == "read_build_log":
             path = self.workspace.resolve(args["path"])
