@@ -312,6 +312,19 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "export_apk",
+        "description": "Copy a verified APK to the configured export folder. In Termux this defaults to ~/storage/shared/Download/APKForge so the APK is visible in Android Downloads; on other hosts it defaults to workspace/exports. Does not overwrite an existing file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Workspace-relative APK path."},
+                "name": {"type": "string", "description": "Optional output filename ending in .apk."},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -393,6 +406,34 @@ class ApkForgeMcpServer:
         if name == "verify_apk":
             path = self.workspace.resolve(args["path"])
             return apkforge.verify_apk(path)
+        if name == "export_apk":
+            source = self.workspace.resolve(args["path"])
+            verified = apkforge.verify_apk(source)
+            filename = args.get("name") or source.name
+            if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}\\.apk", filename, re.IGNORECASE):
+                raise ValueError("APK export name must contain only letters, digits, '.', '_' or '-', and end in .apk.")
+            configured = os.environ.get("APKFORGE_EXPORT_DIR")
+            if configured:
+                export_dir = Path(configured).expanduser().resolve()
+            elif "com.termux" in os.environ.get("PREFIX", ""):
+                export_dir = Path.home() / "storage" / "shared" / "Download" / "APKForge"
+                if not export_dir.parent.parent.exists():
+                    raise RuntimeError("Termux shared storage is not mounted. Run termux-setup-storage and allow file access first.")
+            else:
+                export_dir = self.workspace.root / "exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            destination = export_dir / filename
+            if destination.exists():
+                raise FileExistsError(f"Refusing to overwrite existing APK: {destination}")
+            shutil.copy2(source, destination)
+            exported = apkforge.verify_apk(destination)
+            return {
+                "exported_path": str(destination),
+                "size_bytes": exported["size_bytes"],
+                "sha256": exported["sha256"],
+                "verified": exported["verified"],
+                "source_sha256_matches": exported["sha256"] == verified["sha256"],
+            }
         raise KeyError(f"Unknown APK Forge tool: {name}")
 
 
