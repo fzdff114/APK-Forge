@@ -360,6 +360,7 @@ object LocalBuildEngine {
               echo "android.overridePathCheck=true"
               echo "org.gradle.daemon=false"
               echo "org.gradle.parallel=false"
+              echo "org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
               echo "kotlin.compiler.execution.strategy=in-process"
             } >> gradle.properties
 
