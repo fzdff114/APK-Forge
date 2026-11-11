@@ -329,37 +329,37 @@ object LocalBuildEngine {
 
     private fun buildScript(id: String): String {
         return commonScriptHeader(id) + """
-            export JAVA_HOME="§PREFIX/lib/jvm/java-21-openjdk"
-            export ANDROID_HOME="§PREFIX/opt/android-sdk"
-            export ANDROID_SDK_ROOT="§ANDROID_HOME"
-            export PATH="§JAVA_HOME/bin:§ANDROID_HOME/platform-tools:§PREFIX/bin:§PATH"
+            export JAVA_HOME="$PREFIX/lib/jvm/java-21-openjdk"
+            export ANDROID_HOME="$PREFIX/opt/android-sdk"
+            export ANDROID_SDK_ROOT="$ANDROID_HOME"
+            export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PREFIX/bin:$PATH"
             export GRADLE_OPTS="-Xmx1536m -Dorg.gradle.daemon=false -Dfile.encoding=UTF-8"
 
-            JOB_HOME="§HOME/.apkforge/jobs/§JOB_ID"
-            PROJECT_DIR="§JOB_HOME/project"
-            ARCHIVE="§SHARED/§JOB_ID-project.zip"
-            APK_OUT="§SHARED/§JOB_ID-app-debug.apk"
-            rm -rf "§PROJECT_DIR"
-            mkdir -p "§PROJECT_DIR"
+            JOB_HOME="$HOME/.apkforge/jobs/$JOB_ID"
+            PROJECT_DIR="$JOB_HOME/project"
+            ARCHIVE="$SHARED/$JOB_ID-project.zip"
+            APK_OUT="$SHARED/$JOB_ID-app-debug.apk"
+            rm -rf "$PROJECT_DIR"
+            mkdir -p "$PROJECT_DIR"
 
             echo "[1/6] Checking local toolchain..."
-            test -x "§JAVA_HOME/bin/java" || { echo "JDK missing. Initialize the local build environment first."; exit 21; }
-            test -d "§ANDROID_HOME/platforms/android-35" || { echo "Android SDK 35 missing. Initialize the local build environment first."; exit 22; }
-            test -x "§ANDROID_HOME/build-tools/36.1.0/aapt2" || { echo "Native aapt2 missing. Initialize the local build environment first."; exit 23; }
+            test -x "$JAVA_HOME/bin/java" || { echo "JDK missing. Initialize the local build environment first."; exit 21; }
+            test -d "$ANDROID_HOME/platforms/android-35" || { echo "Android SDK 35 missing. Initialize the local build environment first."; exit 22; }
+            test -x "$ANDROID_HOME/build-tools/36.1.0/aapt2" || { echo "Native aapt2 missing. Initialize the local build environment first."; exit 23; }
 
             echo "[2/6] Extracting generated Android project..."
-            unzip -t "§ARCHIVE" >/dev/null
-            unzip -q "§ARCHIVE" -d "§PROJECT_DIR"
-            ROOT="§PROJECT_DIR"
-            SETTINGS="§(find "§PROJECT_DIR" -maxdepth 6 -type f -name 'settings.gradle*' -print -quit)"
-            if [ -n "§SETTINGS" ]; then ROOT="§(dirname "§SETTINGS")"; fi
-            cd "§ROOT"
+            unzip -t "$ARCHIVE" >/dev/null
+            unzip -q "$ARCHIVE" -d "$PROJECT_DIR"
+            ROOT="$PROJECT_DIR"
+            SETTINGS="$(find "$PROJECT_DIR" -maxdepth 6 -type f -name 'settings.gradle*' -print -quit)"
+            if [ -n "$SETTINGS" ]; then ROOT="$(dirname "$SETTINGS")"; fi
+            cd "$ROOT"
             test -f settings.gradle -o -f settings.gradle.kts || { echo "Gradle settings file missing."; exit 24; }
 
             echo "[3/6] Preparing Android SDK and native aapt2..."
-            printf 'sdk.dir=%s\n' "§ANDROID_HOME" > local.properties
+            printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
             {
-              echo "android.aapt2FromMavenOverride=§ANDROID_HOME/build-tools/36.1.0/aapt2"
+              echo "android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/36.1.0/aapt2"
               echo "android.overridePathCheck=true"
               echo "org.gradle.daemon=false"
               echo "org.gradle.parallel=false"
@@ -369,33 +369,24 @@ object LocalBuildEngine {
 
             echo "[4/6] Building debug APK locally with Gradle..."
             if [ -f gradle/wrapper/gradle-wrapper.jar ] && [ -f gradle/wrapper/gradle-wrapper.properties ] && [ -f gradlew ]; then
-              bash ./gradlew --no-daemon --stacktrace assembleDebug
+              bash ./gradlew --no-daemon --max-workers=2 --stacktrace assembleDebug
             else
-              gradle --no-daemon --stacktrace assembleDebug
+              gradle --no-daemon --max-workers=2 --stacktrace assembleDebug
             fi
 
             echo "[5/6] Locating and validating APK..."
-            APK="§(find . -type f -path '*/build/outputs/apk/debug/*.apk' -print | head -n 1)"
-            test -n "§APK" || { echo "Gradle succeeded but no debug APK was found."; exit 25; }
-            unzip -t "§APK" >/dev/null
-            unzip -Z1 "§APK" | grep -qx 'AndroidManifest.xml'
-            unzip -Z1 "§APK" | grep -Eq '(^|/)classes[0-9]*\.dex
-            sha256sum "§APK_OUT"
+            APK="$(find . -type f -path '*/build/outputs/apk/debug/*.apk' -print | head -n 1)"
+            test -n "$APK" || { echo "Gradle succeeded but no debug APK was found."; exit 25; }
+            unzip -t "$APK" >/dev/null
+            unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+            unzip -Z1 "$APK" | grep -Eq '(^|/)classes[0-9]*\.dex$'
+            apksigner verify --verbose "$APK"
+            cp -f "$APK" "$APK_OUT"
+            sha256sum "$APK_OUT"
 
             echo "[6/6] APK created in Download/APKForge."
-            printf 'SUCCESS\n' > "§STATUS"
+            printf 'SUCCESS\n' > "$STATUS"
             trap - EXIT
-        """.trimIndent().replace("§", "$") + "\n"
-    }
-}
-
-            apksigner verify --verbose "§APK"
-            cp -f "§APK" "§APK_OUT"
-            sha256sum "§APK_OUT"
-
-            echo "[6/6] APK created in Download/APKForge."
-            printf 'SUCCESS\n' > "§STATUS"
-            trap - EXIT
-        """.trimIndent().replace("§", "$") + "\n"
+        """.trimIndent().replace("$", "$") + "\n"
     }
 }
