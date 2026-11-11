@@ -1,78 +1,62 @@
 # APK Forge local-first AI tools
 
-APK Forge exposes real filesystem and build operations to an AI coding agent through an MCP stdio server. The agent writes actual Android source files into a workspace, scans the project, runs a local Gradle build, reads compiler errors, repairs the project and verifies the APK. It does not require GitHub Actions.
+APK Forge exposes real project filesystem and Android build operations to an AI coding agent through an MCP stdio server. The agent writes complete Android source/configuration files into a local workspace, scans the project, runs Gradle locally, reads real compiler errors, repairs the project, verifies the APK and exports it. It does not require GitHub Actions.
 
-Requirements: Python 3.10+; no pip packages are required.
+## On-device requirements
 
-## Connect the tools to an AI coding agent
+The Android app delegates native command execution to the official Termux app. Install Termux, grant APK Forge the dangerous com.termux.permission.RUN_COMMAND permission, enable allow-external-apps=true in Termux, and run termux-setup-storage with storage permission. APK Forge's Local Build Environment screen has a setup command and a toolchain installer.
 
-Start the MCP server from a local checkout:
+The installer uses Termux packages for Python, Git, OpenJDK 21, Gradle, Android SDK, Android build utilities, zipalign, apksigner and unzip. It installs Android platform 35 and build-tools 36.1.0. First setup downloads a large toolchain and needs sufficient free storage.
 
-~~~sh
-python3 tools/apkforge_mcp.py --workspace ./apkforge-workspace
-~~~
+## Start MCP in Termux
 
-For a Codex-style MCP configuration, register the command with the absolute path to the checkout and workspace. For example:
+Clone the APK Forge repository inside Termux (the development branch while local-first work is being validated):
 
 ~~~sh
-codex mcp add apk-forge -- python3 /absolute/path/APK-Forge/tools/apkforge_mcp.py --workspace /absolute/path/apkforge-workspace
+git clone --branch local-first-prompt-builder https://github.com/fzdff114/APK-Forge.git
+cd APK-Forge
+export ANDROID_HOME="$PREFIX/opt/android-sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+python3 tools/apkforge_mcp.py --workspace "$HOME/apkforge-workspace"
 ~~~
 
-A Claude Desktop-style configuration looks like:
+Register that command in an AI coding agent that runs in the same local environment and can start MCP stdio processes. The agent must share the configured workspace. The MCP server is a tool interface; it does not call a model or store provider credentials. A cloud-only AI session with no bridge to the phone cannot directly edit phone files.
 
-~~~json
-{
-  "mcpServers": {
-    "apk-forge": {
-      "command": "python3",
-      "args": [
-        "/absolute/path/APK-Forge/tools/apkforge_mcp.py",
-        "--workspace",
-        "/absolute/path/apkforge-workspace"
-      ]
-    }
-  }
-}
-~~~
-
-The AI agent must run in an environment that can start this MCP process and access the same workspace. This is a tool server, not an AI model and not an AI chat application.
-
-## Tools exposed to the agent
+## Tools exposed
 
 | Tool | What it actually does |
 |---|---|
-| workspace_info | Detects Java, Gradle and Android SDK availability |
-| create_project | Creates a Kotlin + Compose Android project scaffold |
-| list_files | Lists workspace project files |
-| read_file | Reads source/configuration text; protects local paths and secrets |
-| write_file | Atomically writes real project source/configuration files |
+| workspace_info | Detects local Java, Gradle and Android SDK |
+| create_project | Creates a real Kotlin + Compose project scaffold |
+| list_files | Lists workspace files, hiding build caches and secrets |
+| read_file | Reads source/config text; blocks local paths and signing secrets |
+| write_file | Atomically writes a real project file |
 | edit_file | Applies exact, ambiguity-checked source edits |
 | delete_file | Deletes an explicitly confirmed project file |
-| search_code | Searches source/configuration text with line numbers |
-| analyze_project | Runs the Android project scanner |
-| build_apk | Runs local Gradle assembleDebug and verifies the output APK |
+| search_code | Searches source/configuration files with line numbers |
+| analyze_project | Runs APK Forge's Android project scanner |
+| build_apk | Executes local Gradle assembleDebug and checks the APK |
 | read_build_log | Returns real Gradle/compiler failure lines for AI repair |
-| verify_apk | Checks APK ZIP integrity, Manifest, dex entries and SHA-256 |
+| verify_apk | Checks ZIP integrity, Manifest, DEX and SHA-256 |
+| export_apk | Copies a verified APK to ~/storage/shared/Download/APKForge/ in Termux; on other hosts uses workspace/exports/ |
 
-## Expected AI generation workflow
+## Required agent workflow
 
-1. The user describes the app in a prompt.
-2. The AI agent calls create_project (or inspects an imported project).
-3. The agent implements all requested features using write_file and edit_file. A scaffold is not considered a finished app.
-4. The agent calls analyze_project and fixes actual blockers.
-5. After reviewing the project's Gradle scripts, the agent calls build_apk with allow_project_code=true.
-6. On a failure, the agent calls read_build_log, fixes the root cause and rebuilds.
-7. The agent calls verify_apk and returns the APK path and digest.
+1. Convert the user's prompt to a testable feature checklist.
+2. Call workspace_info, then create_project (or inspect the provided project).
+3. Implement all real features by writing files. Do not stop at the scaffold; no fake buttons, TODO-only files or empty classes.
+4. Call analyze_project and fix actual errors.
+5. Review Gradle scripts. With explicit user approval, call build_apk with allow_project_code=true.
+6. On failure, call read_build_log, repair the root cause and rebuild.
+7. Call verify_apk, then export_apk; return the exported path and SHA-256.
 
-The project, Gradle invocation, build log and APK stay in the workspace where the MCP server runs. The tool server does not upload source to GitHub and does not dispatch GitHub Actions. GitHub export/hosting is a separate optional operation.
+## ZIP handoff fallback
 
-## Important distinction about the Android app
+If the AI agent is running somewhere that cannot access the phone's MCP process, it should generate a complete Android Studio project ZIP (including settings/build files, manifest, sources and resources). Import that ZIP in APK Forge. The Android app scans and builds it locally through Termux. This flow still does not upload source to GitHub.
 
-The MCP server's Gradle build is local to the computer/runtime that launches it. It is not a substitute for an Android on-device Gradle runtime. The APK Forge Android app still needs its on-device build engine integrated; the legacy GitHub remote-build screen is not the desired final workflow.
+## Direct command-line fallback
 
-## Command-line fallback
-
-The same analysis and build functions are available directly:
+The local CLI can create, inspect, build and verify projects:
 
 ~~~sh
 python3 tools/apkforge.py scaffold --name "Notes App" --package com.example.notes --output generated-project
@@ -81,4 +65,4 @@ python3 tools/apkforge.py build --project generated-project --confirm-gradle-cod
 python3 tools/apkforge.py verify --apk generated-project/app/build/outputs/apk/debug/app-debug.apk
 ~~~
 
-Build safety: Gradle scripts and plugins can execute code. Review the project before building and explicitly approve execution. The static scanner does not replace a real Gradle build.
+Build safety: Gradle scripts and plugins can execute code. Review source and explicitly approve execution. A static scanner does not replace a real Gradle build.
