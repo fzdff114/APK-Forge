@@ -76,6 +76,57 @@ class ApkForgeToolTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 apkforge.verify_apk(apk)
 
+    def test_termux_build_config_uses_native_sdk_aapt2_and_restores_files(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "project"
+            root.mkdir()
+            sdk = Path(tmp) / "sdk"
+            aapt2 = sdk / "build-tools" / "36.1.0" / "aapt2"
+            aapt2.parent.mkdir(parents=True)
+            aapt2.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+            aapt2.chmod(0o755)
+            local = root / "local.properties"
+            gradle = root / "gradle.properties"
+            local.write_text("sdk.dir=/old/sdk\\nother=value\\n", encoding="utf-8")
+            gradle.write_text("custom=true\\nandroid.aapt2FromMavenOverride=/old/aapt2\\n", encoding="utf-8")
+            env = {
+                "PREFIX": "/data/data/com.termux/files/usr",
+                "ANDROID_HOME": str(sdk),
+            }
+            with mock.patch.dict("os.environ", env, clear=False):
+                backups = apkforge.apply_termux_build_config(root)
+            local_text = local.read_text(encoding="utf-8")
+            gradle_text = gradle.read_text(encoding="utf-8")
+            self.assertIn(f"sdk.dir={sdk.resolve()}", local_text)
+            self.assertIn(f"android.aapt2FromMavenOverride={aapt2.resolve()}", gradle_text)
+            self.assertIn("custom=true", gradle_text)
+            self.assertNotIn("/old/aapt2", gradle_text)
+            apkforge.restore_termux_build_config(backups)
+            self.assertEqual(local.read_text(encoding="utf-8"), "sdk.dir=/old/sdk\\nother=value\\n")
+            self.assertEqual(gradle.read_text(encoding="utf-8"),
+                             "custom=true\\nandroid.aapt2FromMavenOverride=/old/aapt2\\n")
+
+    def test_termux_build_config_is_noop_outside_termux(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict("os.environ", {"PREFIX": "/usr", "ANDROID_HOME": "/nonexistent"}, clear=False):
+                self.assertIsNone(apkforge.apply_termux_build_config(Path(tmp)))
+
+    def test_termux_build_config_requires_native_aapt2(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sdk = root / "sdk"
+            (sdk / "build-tools" / "36.1.0").mkdir(parents=True)
+            with mock.patch.dict("os.environ", {
+                "PREFIX": "/data/data/com.termux/files/usr",
+                "ANDROID_HOME": str(sdk),
+                "PATH": "",
+            }, clear=False):
+                with self.assertRaises(RuntimeError):
+                    apkforge.apply_termux_build_config(root)
+
     def test_archive_excludes_local_files_and_build_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "project"
