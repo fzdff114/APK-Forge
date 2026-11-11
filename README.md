@@ -1,62 +1,68 @@
 # APK Forge
 
-APK Forge is an Android utility for inspecting Android projects and obtaining debug APK builds. AI-assisted project generation and repair are provided as repository-side tools for AI coding agents, not as an AI client embedded in the Android app.
+APK Forge is a local-first Android project-to-APK tool:
 
-## Android application
+**Natural-language app prompt → AI coding agent creates real project files → on-device Gradle build → verified APK in Downloads.**
 
-- Import an Android project ZIP using the Android file picker.
-- Safely extract and inspect the project structure.
-- Check Gradle settings, Android modules, Manifest files, source files, SDK configuration and wrapper completeness.
-- Configure a Private GitHub repository for remote builds.
-- Trigger a remote build, track the result, download the APK artifact and save it on the phone.
-- The app does not contain an AI chat UI, AI API endpoint, model selector or AI API key field.
+GitHub is optional source hosting. It is not required to generate or compile an app.
 
-## Repository-side AI tools
+## Android app
 
-AI coding agents use the Python tools in tools/apkforge.py from their own terminal or tool environment. Read AGENTS.md and tools/README.md first.
+- Copy a structured Android engineering task from your requirements prompt to an AI coding agent.
+- Import a complete Android project ZIP when the AI agent runs outside the phone.
+- Inspect Android projects, Gradle modules, Manifest, SDK configuration and sources.
+- Initialize the local JDK, Gradle and Android SDK build environment through Termux.
+- Build with Gradle on the Android device, without GitHub Actions.
+- Review real build logs, verify the APK archive/Manifest/DEX/signature and SHA-256, then save the APK.
+- No AI chat client, model selector, AI API endpoint or AI API-key form is embedded in this app.
 
-- scaffold: create a real minimal Android project skeleton.
-- scan: inspect a project's modules, Gradle files, Manifest, sources and wrapper.
-- prompt: create a context-aware AI repair task from actual scan findings.
-- build: run assembleDebug, save logs and locate/verify the generated APK.
-- verify: validate APK archive integrity, Manifest, dex entries and SHA-256.
-- archive: create a filtered source ZIP for remote builds.
+The local build bridge uses the official Termux app as its execution environment. Install Termux, grant APK Forge the Termux RUN_COMMAND permission, enable Termux external commands, and grant Termux shared-storage access. The app's setup flow installs Python, JDK 21, Gradle and Android SDK packages. First setup downloads a sizable toolchain.
 
-Requirements: Python 3.10+; no pip packages are required.
+## AI coding-agent tools (MCP)
 
-## Generate a new APK with an AI coding agent
+tools/apkforge_mcp.py is a real MCP stdio server. An AI coding agent connected to it can create an Android project, create/read/write/edit/delete source files in a sandboxed workspace, search code, scan Android/Gradle configuration, build locally with Gradle, read real build logs, repair errors, verify the APK and export it to Android Download/APKForge/.
 
-1. Open this repository in an AI coding agent that can read files and run terminal commands.
-2. Tell the agent to read AGENTS.md and tools/README.md.
-3. Describe the Android app you want. The agent creates generated-project/ with scaffold, then implements the actual features.
-4. The agent runs scan, fixes errors, reviews Gradle scripts, then builds and verifies the APK.
-5. The agent reports the verified APK path and SHA-256.
+On the phone, run the MCP server from Termux so Gradle uses the device-local toolchain:
 
-Example:
+1. Initialize Termux from APK Forge, or install Python, Git, JDK 21, Gradle and Android SDK packages in Termux.
+2. Clone this repository's local-first-prompt-builder branch inside Termux.
+3. Register the command below as an MCP server in an AI coding agent running in that same environment.
+4. Give the agent your app prompt. It must create and implement complete files, call analyze_project, build_apk, read_build_log if needed, verify_apk, then export_apk.
 
 ~~~sh
-python3 tools/apkforge.py scaffold --name "Offline Notes" --package com.example.offlinenotes --output generated-project
-python3 tools/apkforge.py scan --project generated-project
-python3 tools/apkforge.py build --project generated-project --confirm-gradle-code
-python3 tools/apkforge.py verify --apk generated-project/app/build/outputs/apk/debug/app-debug.apk
+pkg update -y
+pkg install -y python git openjdk-21 gradle android-sdk apksigner d8 zipalign unzip
+export ANDROID_HOME="$PREFIX/opt/android-sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+git clone --branch local-first-prompt-builder https://github.com/fzdff114/APK-Forge.git
+cd APK-Forge
+python3 tools/apkforge_mcp.py --workspace "$HOME/apkforge-workspace"
 ~~~
 
-See docs/AI_USAGE.md, docs/TOOLS_REFERENCE.md, ai-prompts/GENERATE_ANDROID_APP.md and ai-prompts/REPAIR_ANDROID_PROJECT.md.
+Run termux-setup-storage first so export_apk can copy the verified APK to ~/storage/shared/Download/APKForge/. APK Forge can also build a project ZIP imported from another AI environment.
 
-## Build workflows
+The MCP server is a tool interface, not an AI model. The connected coding agent supplies the model/intelligence and must run where it can access the MCP process and its workspace. A remote AI chat without a local tool bridge cannot directly edit files on the phone.
 
-- APK Forge app CI: .github/workflows/apkforge-ci.yml
-- AI-generated project build: .github/workflows/ai-project-build.yml
-- ZIP-based remote build backend: .github/workflows/android-build.yml
+## MCP tools
 
-The AI project build workflow is manually dispatched and builds a project directory committed in the selected repository. Use a Private repository for private app source code. Do not send source code to a Public repository.
+| Tool | Function |
+|---|---|
+| workspace_info | Detect Java, Gradle and Android SDK |
+| create_project | Create a Kotlin/Compose Android scaffold |
+| list_files, read_file, write_file, edit_file, delete_file | Operate on workspace files |
+| search_code | Find source/configuration references |
+| analyze_project | Scan Gradle modules, Manifest and sources |
+| build_apk | Run local assembleDebug and verify build output |
+| read_build_log | Return actual Gradle/compiler failures for AI repair |
+| verify_apk | Validate ZIP, Manifest, DEX and SHA-256 |
+| export_apk | Copy a verified APK to the configured export folder |
 
-## Build stack
+Requirements: Python 3.10+ for repository tools; Android app build uses AGP 8.9.2, Kotlin 2.1.20 and compileSdk 35. On-device runtime uses Termux's Android-native SDK and JDK 21.
 
-- Android Gradle Plugin: 8.9.2
-- Kotlin: 2.1.20
-- JDK: 17
-- compileSdk: 35
-- minSdk: 26
+## GitHub role
 
-APK Forge does not claim a build succeeded until Gradle reports success and APK verification passes.
+GitHub is for optional source backup, collaboration and sharing. This repository's Actions workflow validates APK Forge itself during development; it is not the normal build path for user-generated apps. Legacy remote-build workflows remain optional and are not used by the local-first app flow.
+
+## Build safety
+
+Gradle build scripts and plugins execute project code. APK Forge requires explicit approval before running a local build. Do not build untrusted project sources. The static scanner is heuristic; only a real successful Gradle build plus APK verification counts as success.
