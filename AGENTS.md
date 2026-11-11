@@ -1,6 +1,6 @@
 # APK Forge - instructions for AI coding agents
 
-This repository contains repository-side tools for generating, inspecting, repairing, building, and verifying Android projects. Do not add an AI chat client, API-key form, model selector, or AI generation UI to the APK Forge Android app unless the user explicitly asks for an in-app AI feature. AI agents use the tools in this repository from their own terminal/tool environment.
+This repository contains local-first MCP tools and an Android app that compiles Android projects on-device through Termux. The target workflow is prompt → AI agent creates complete project files through MCP → local Gradle build → verified APK export. Do not add an AI chat client, model selector or AI API-key form to APK Forge unless explicitly requested. GitHub is optional source hosting, not a normal build dependency.
 
 ## First steps
 
@@ -8,6 +8,16 @@ This repository contains repository-side tools for generating, inspecting, repai
 2. Identify whether the user wants to modify APK Forge itself or create a separate Android app.
 3. If creating a separate app, use a separate project directory (default: generated-project/) so the APK Forge utility app remains intact.
 4. Turn the user's feature request into a concrete acceptance checklist before coding.
+
+## Local-first MCP workflow
+
+1. On the Android device, install Termux and grant APK Forge the Termux RUN_COMMAND permission.
+2. Enable Termux external commands (allow-external-apps=true) and grant shared storage access with termux-setup-storage.
+3. Initialize the local toolchain in APK Forge.
+4. Run tools/apkforge_mcp.py from Termux and connect an AI coding agent running in that same environment. The agent creates files in the configured workspace, calls analyze_project/build_apk/read_build_log/verify_apk/export_apk, and saves the APK under Download/APKForge.
+5. If the AI agent cannot access the phone's local MCP process, it must export a complete Android project ZIP for import into APK Forge. The app still builds it locally via Termux.
+
+The MCP server is a tool interface, not an AI model. A remote chat session without a local tool bridge cannot directly access the phone filesystem.
 
 ## Repository tools
 
@@ -70,9 +80,11 @@ Commands:
 ## Guardrails
 
 - Never place AI API credentials, GitHub tokens, keystores, private keys, local.properties, or machine-specific paths in commits.
-- Never upload or commit a user's app source to a Public repository. This APK-Forge repository is currently Public and is for reusable tools only; place generated app source in a separate Private repository or a local workspace. The remote AI project build workflow refuses Public repositories.
+- Do not upload or commit a user's app source to this Public repository. Prefer a local workspace; GitHub hosting is optional and must not be required to compile an APK.
 - Never run arbitrary AI-generated shell scripts. Use the documented tools and known Gradle tasks.
 - A Gradle build can execute arbitrary project build logic. Review untrusted projects and obtain approval before building.
 - The scan tool is heuristic, not a compiler. A zero-error scan does not prove that an APK builds.
+- In Termux, apkforge.py temporarily configures the native Android SDK/aapt2 and restores project machine-local properties after the build.
+- After successful verification, call export_apk to copy the APK into Android Downloads.
 - An AI response is not a build result. Only successful Gradle output plus successful APK verification counts.
 - Keep generated app code under generated-project/ unless the user explicitly asks to replace APK Forge itself.
