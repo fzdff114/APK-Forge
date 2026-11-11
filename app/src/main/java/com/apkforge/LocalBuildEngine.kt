@@ -288,7 +288,7 @@ object LocalBuildEngine {
             echo "[1/4] Updating Termux package lists..."
             pkg update -y
             echo "[2/4] Installing JDK, Gradle and Android build tools..."
-            pkg install -y openjdk-21 gradle android-sdk apksigner d8 zipalign unzip
+            pkg install -y python git openjdk-21 gradle android-sdk apksigner d8 zipalign unzip
 
             if [ ! -x "§JAVA_HOME/bin/java" ]; then
               JAVA_BIN="§(command -v java)"
