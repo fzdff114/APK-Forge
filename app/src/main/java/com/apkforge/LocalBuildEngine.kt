@@ -68,7 +68,7 @@ object LocalBuildEngine {
         val status = createDownloadFile(context, "$id.status", "text/plain")
         val log = createDownloadFile(context, "$id.log", "text/plain")
         val script = createDownloadFile(context, "$id-setup.sh", "text/x-shellscript")
-        writeText(context, status.uri, "RUNNING\n")
+        writeText(context, status.uri, "QUEUED\n")
         writeText(context, script.uri, toolchainSetupScript(id))
         dispatchTermux(context, script.path)
         return LocalBuildJob(id, status.uri, log.uri, null)
@@ -91,7 +91,7 @@ object LocalBuildEngine {
             context, "$id-app-debug.apk", "application/vnd.android.package-archive"
         )
         val script = createDownloadFile(context, "$id-build.sh", "text/x-shellscript")
-        writeText(context, status.uri, "RUNNING\n")
+        writeText(context, status.uri, "QUEUED\n")
         writeText(context, script.uri, buildScript(id))
         dispatchTermux(context, script.path)
         return LocalBuildJob(id, status.uri, log.uri, apk.uri)
@@ -382,7 +382,7 @@ object LocalBuildEngine {
             sha256sum "§APK_OUT"
 
             echo "[6/6] APK created in Download/APKForge."
-            printf 'SUCCESS\\n' > "§STATUS"
+            printf 'SUCCESS\n' > "§STATUS"
             trap - EXIT
         """.trimIndent().replace("§", "$") + "\n"
     }
