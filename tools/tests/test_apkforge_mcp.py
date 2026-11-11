@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parents[1]
@@ -85,6 +86,29 @@ class WorkspaceToolTests(unittest.TestCase):
         self.assertFalse(call["result"]["isError"])
         decoded = json.loads(call["result"]["content"][0]["text"])
         self.assertFalse(decoded["github_required"])
+
+    def test_export_apk_copies_and_reverifies_to_exports_folder(self):
+        apk = self.root / "projects" / "demo" / "app-debug.apk"
+        apk.parent.mkdir(parents=True)
+        with zipfile.ZipFile(apk, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("AndroidManifest.xml", b"manifest")
+            archive.writestr("classes.dex", b"dex")
+        result = self.server.call_tool("export_apk", {"path": "projects/demo/app-debug.apk"})
+        exported = Path(result["exported_path"])
+        self.assertTrue(exported.is_file())
+        self.assertEqual(exported.parent, self.root / "exports")
+        self.assertTrue(result["verified"])
+        self.assertTrue(result["source_sha256_matches"])
+        with self.assertRaises(FileExistsError):
+            self.server.call_tool("export_apk", {"path": "projects/demo/app-debug.apk"})
+
+    def test_export_apk_rejects_unsafe_filename(self):
+        apk = self.root / "demo.apk"
+        with zipfile.ZipFile(apk, "w") as archive:
+            archive.writestr("AndroidManifest.xml", b"manifest")
+            archive.writestr("classes.dex", b"dex")
+        with self.assertRaises(ValueError):
+            self.server.call_tool("export_apk", {"path": "demo.apk", "name": "../demo.apk"})
 
     def test_reads_content_length_framed_mcp_message(self):
         payload = json.dumps({
