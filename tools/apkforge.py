@@ -465,9 +465,7 @@ def apply_termux_build_config(root: Path):
     sdk = Path(sdk_value).expanduser().resolve()
     build_tools = sdk / "build-tools"
     candidates = [p for p in build_tools.iterdir() if p.is_dir()] if build_tools.is_dir() else []
-    candidates.sort(key=lambda p: tuple(
-        int(part) if part.isdigit() else part for part in re.split(r"[.-]", p.name)
-    ))
+    candidates.sort(key=lambda p: tuple(int(part) for part in re.findall(r"\\d+", p.name)))
     aapt2 = next(
         (p / "aapt2" for p in reversed(candidates)
          if (p / "aapt2").is_file() and os.access(p / "aapt2", os.X_OK)),
