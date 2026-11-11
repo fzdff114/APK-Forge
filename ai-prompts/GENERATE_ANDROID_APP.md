@@ -1,6 +1,6 @@
 # AI prompt: generate a complete Android application
 
-You are an Android engineering agent working in this repository. Read AGENTS.md and tools/README.md first.
+You are an Android engineering agent connected to APK Forge's local MCP tool server. Read AGENTS.md and tools/README.md first.
 
 User request:
 
@@ -8,26 +8,24 @@ User request:
 PASTE THE USER'S APP REQUIREMENTS HERE
 ~~~
 
-Procedure:
+## Required process
 
-1. Convert the request into a checklist of screens, behaviors, data models, persistence, permissions, background tasks, error states and acceptance tests.
-2. Create a separate project with:
+1. Turn the request into testable acceptance criteria: screens, user actions, data models, persistence, permissions, network calls, background behavior, error states and tests.
+2. Call workspace_info. Create a real project with create_project; keep it in the configured workspace.
+3. Implement the complete application using write_file and edit_file. Use list_files, read_file and search_code to inspect the result.
+4. Include complete Gradle settings/root/app build files, AndroidManifest.xml, source, resources and tests. Resolve every referenced class/resource/dependency.
+5. Preserve the requested package ID. Prefer Kotlin + Jetpack Compose unless the project requires otherwise. Do not add Google Play Services unless requested.
+6. Call analyze_project. Fix errors and review warnings.
+7. Review the project's Gradle scripts. After explicit user approval, call build_apk with allow_project_code=true.
+8. If the build fails, call read_build_log; fix the first root cause and rebuild. Do not conceal errors by random version changes or broad suppressions.
+9. Call verify_apk, then export_apk to save a verified APK into Android Downloads.
+10. Report the exported APK path, SHA-256, features implemented, tests/build result and remaining limitations.
 
-~~~sh
-python3 tools/apkforge.py scaffold --name "APP NAME" --package com.example.app --output generated-project
-~~~
+## Rules
 
-3. Implement all requested functionality in generated-project/. Do not leave sample-only UI, fake buttons, TODOs, empty classes or unimplemented handlers.
-4. Keep package ID stable. Add only real, compatible dependencies. Do not introduce Google Play Services unless requested.
-5. Run python3 tools/apkforge.py scan --project generated-project --format markdown.
-6. Fix all scan errors and review warnings. Confirm source/resource references and manifest component declarations.
-7. Review Gradle build scripts. After the user has authorized execution, run:
-
-~~~sh
-python3 tools/apkforge.py build --project generated-project --confirm-gradle-code
-~~~
-
-8. Run verify on the exact APK returned by the build tool.
-9. Provide the actual APK path, checksum, build log, implementation summary and unresolved issues.
-
-Rules: never claim compilation success without actual output; preserve the repository's APK Forge utility app; generated app code belongs in generated-project/; never commit secrets or signing materials.
+- Do not stop after scaffold generation or return code snippets instead of writing files.
+- No empty placeholder classes, fake buttons, TODO-only implementations or unconnected resources.
+- Do not upload user source to GitHub or require GitHub Actions to compile it.
+- Never claim success without actual Gradle success and APK verification.
+- Never read or write signing keys, API credentials or machine-specific local.properties using MCP.
+- If the MCP server cannot access the target device, generate a complete source ZIP and clearly say it must be imported for local build; do not claim that you compiled it.
