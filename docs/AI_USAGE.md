@@ -1,63 +1,48 @@
-# How AI agents use APK Forge tools
+# AI agent usage: prompt to project files to APK
 
-## Important distinction
+## Intended workflow
 
-AI functionality lives in the GitHub repository as scripts and agent instructions. The APK Forge Android app itself does not contain an AI chat screen, AI API endpoint, model selector or AI API key field. The AI coding agent connected to this repository is the caller of the repository tools.
+The user describes an Android app in natural language. An AI coding agent must create and implement the complete Android project (not merely return snippets), call APK Forge tools, run a real local Gradle build, repair actual failures, verify the APK and export it.
 
-## Set up an AI coding agent
+The APK Forge Android app has no built-in AI chat, model picker or AI API-key screen. The user connects an AI coding agent to the local MCP server instead.
 
-Open this repository in an AI coding environment that can read files and run terminal commands. The agent should read AGENTS.md automatically. If it does not, explicitly tell it:
+## Connect the MCP server on Android
 
-~~~text
-Read AGENTS.md and tools/README.md. Use the repository's apkforge.py tools to create, inspect, repair, build and verify Android projects. Keep generated app code under generated-project/ and do not add AI API configuration to the APK Forge Android app.
-~~~
-
-## Generate a new Android app
-
-1. Tell the AI what application to create, including screens, behaviors, data storage, permissions, device/Android version constraints and network requirements.
-2. The AI calls scaffold to create a complete Gradle project skeleton.
-3. The AI writes real app implementation files into generated-project/.
-4. The AI calls scan and fixes structural errors.
-5. After reviewing build scripts and obtaining build authorization, the AI calls build.
-6. The AI calls verify and reports the actual APK path and SHA-256.
+1. Install the official Termux app.
+2. In APK Forge, grant the com.termux.permission.RUN_COMMAND permission.
+3. In Termux, enable external commands and storage access. Use the setup command shown by APK Forge; it sets allow-external-apps=true, reloads Termux settings and runs termux-setup-storage.
+4. Run APK Forge's local toolchain setup. It installs Python, Git, JDK 21, Gradle, Android SDK, native Android build tools and signing verification tools.
+5. Clone this repository's local-first-prompt-builder branch in Termux and register tools/apkforge_mcp.py as a local MCP server in an AI coding agent running in the same environment.
 
 Example:
 
 ~~~sh
-python3 tools/apkforge.py scaffold --name "Offline Notes" --package com.example.offlinenotes --output generated-project
+git clone --branch local-first-prompt-builder https://github.com/fzdff114/APK-Forge.git
+cd APK-Forge
+python3 tools/apkforge_mcp.py --workspace "$HOME/apkforge-workspace"
 ~~~
 
-## Repair an existing AI-generated project
+The agent must be able to start that process and share the same filesystem. The MCP server is the tool interface, not the model. A remote AI session without a local tool bridge cannot write to phone files.
 
-1. Put the project in generated-project/ or give the agent its exact path.
-2. Ask the agent to inspect the project and run scan.
-3. Ask it to read the report and generate a repair plan; prompt assembles findings and selected project context.
-4. The agent fixes missing or inconsistent files without overwriting unrelated features.
-5. It rebuilds and verifies the output APK.
+## Required AI generation sequence
 
-## Tool commands
+1. Convert the request into acceptance criteria: screens, interactions, data, persistence, permissions, network behavior, error states, Android versions and tests.
+2. Call workspace_info.
+3. Call create_project or inspect the user's existing project.
+4. Implement real functionality by calling write_file and edit_file. Use read_file, list_files and search_code to inspect implementation. Do not stop at an empty scaffold.
+5. Call analyze_project, fix structural/Manifest/Gradle errors and review warnings.
+6. Review the Gradle scripts. After explicit approval, call build_apk with allow_project_code=true.
+7. On failure, call read_build_log, repair the root cause and rebuild.
+8. Call verify_apk.
+9. Call export_apk to copy the verified APK to Android Download/APKForge/ (when running under Termux), then report the saved path and SHA-256.
 
-| Tool | What AI uses it for |
-|---|---|
-| scaffold | Create a real Android project skeleton |
-| scan | Find likely structural/build blockers |
-| prompt | Give AI project-specific repair context |
-| build | Compile with Gradle and locate the APK |
-| verify | Check APK archive, Manifest, dex and SHA-256 |
-| archive | Package source safely for a remote build |
+## If the AI agent runs elsewhere
 
-## Build using GitHub Actions
+When the AI agent cannot access the phone's local MCP process, have it generate a complete Android Studio project and export the full source project as a ZIP. Import that ZIP in APK Forge. The Android app scans it and runs the build locally through Termux. This is a fallback handoff, not a GitHub upload.
 
-The workflow .github/workflows/ai-project-build.yml can build generated-project/ after the agent commits the project. It checks that the selected repository is Private and refuses Public repositories. The current fzdff114/APK-Forge repository is Public, so use a separate Private repository for private app source. Open GitHub Actions there, select “Build AI generated Android project”, choose the project directory, and run it. The APK is uploaded as an artifact.
+## Security
 
-Alternatively, the agent can run apkforge.py build in a prepared build environment. The workflow uses JDK 17 and Android SDK 35.
-
-## What AI must not do
-
-- Do not claim a ZIP, source folder, or generated code is an APK.
-- Do not claim success when Gradle failed or when no APK artifact exists.
-- Do not create empty files just to silence scan warnings.
-- Do not silently change application ID or remove existing features.
-- Do not place AI API keys, signing files, or local SDK paths in the repository.
-- Do not upload private project source to a Public GitHub repository.
-- Do not put AI API settings or AI code generation UI inside the APK Forge Android app.
+- Gradle scripts and plugins can execute code; only build projects you trust and have reviewed.
+- The MCP server confines file operations to its configured workspace and blocks credentials, keystores and machine-local SDK configuration.
+- Do not upload project source to GitHub to compile it.
+- Never claim an APK exists until Gradle succeeds and APK verification passes.
