@@ -299,7 +299,7 @@ private fun ApkForgeScreen() {
                             Button(
                                 onClick = {
                                     clipboard.setText(AnnotatedString(promptText()))
-                                    status = "完整工程生成任务已复制。将它交给已连接 APK Forge MCP 工具的 AI 编程代理。"
+                                    status = "完整工程生成任务已复制。优先交给已连接 APK Forge MCP 的 AI 代理，让它直接写入本机工作区并调用本机编译；也可以让外部代理生成完整 ZIP 再导入。"
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !busy
