@@ -13,6 +13,7 @@ import fnmatch
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -410,7 +411,7 @@ class ApkForgeMcpServer:
             source = self.workspace.resolve(args["path"])
             verified = apkforge.verify_apk(source)
             filename = args.get("name") or source.name
-            if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}\\.apk", filename, re.IGNORECASE):
+            if not isinstance(filename, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}\.apk", filename, re.IGNORECASE):
                 raise ValueError("APK export name must contain only letters, digits, '.', '_' or '-', and end in .apk.")
             configured = os.environ.get("APKFORGE_EXPORT_DIR")
             if configured:
