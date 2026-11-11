@@ -265,12 +265,13 @@ object LocalBuildEngine {
               code=§?
               if [ "§code" -ne 0 ]; then
                 echo "Build or setup failed (exit §code)"
-                printf 'FAILED\\n%s\\n' "§code" > "§STATUS"
+                printf 'FAILED\n%s\n' "§code" > "§STATUS"
               fi
             }
             trap on_exit EXIT
             echo "APK Forge local task: §JOB_ID"
             echo "Termux prefix: §PREFIX"
+            printf 'RUNNING\n' > "§STATUS"
         """.trimIndent()
             .replace("__SHARED_ROOT__", shared)
             .replace("__JOB_ID__", id)
@@ -319,7 +320,7 @@ object LocalBuildEngine {
             java -version
             gradle --version | head -n 8
             echo "Local Android build environment is ready."
-            printf 'SUCCESS\\n' > "§STATUS"
+            printf 'SUCCESS\n' > "§STATUS"
             trap - EXIT
         """.trimIndent().replace("§", "$") + "\n"
     }
@@ -354,7 +355,7 @@ object LocalBuildEngine {
             test -f settings.gradle -o -f settings.gradle.kts || { echo "Gradle settings file missing."; exit 24; }
 
             echo "[3/6] Preparing Android SDK and native aapt2..."
-            printf 'sdk.dir=%s\\n' "§ANDROID_HOME" > local.properties
+            printf 'sdk.dir=%s\n' "§ANDROID_HOME" > local.properties
             {
               echo "android.aapt2FromMavenOverride=§ANDROID_HOME/build-tools/36.1.0/aapt2"
               echo "android.overridePathCheck=true"
@@ -376,7 +377,7 @@ object LocalBuildEngine {
             test -n "§APK" || { echo "Gradle succeeded but no debug APK was found."; exit 25; }
             unzip -t "§APK" >/dev/null
             unzip -Z1 "§APK" | grep -qx 'AndroidManifest.xml'
-            unzip -Z1 "§APK" | grep -Eq '(^|/)classes[0-9]*\\.dex$'
+            unzip -Z1 "§APK" | grep -Eq '(^|/)classes[0-9]*\.dex$'
             cp -f "§APK" "§APK_OUT"
             sha256sum "§APK_OUT"
 
