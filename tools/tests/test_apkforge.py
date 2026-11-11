@@ -84,12 +84,12 @@ class ApkForgeToolTests(unittest.TestCase):
             sdk = Path(tmp) / "sdk"
             aapt2 = sdk / "build-tools" / "36.1.0" / "aapt2"
             aapt2.parent.mkdir(parents=True)
-            aapt2.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+            aapt2.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             aapt2.chmod(0o755)
             local = root / "local.properties"
             gradle = root / "gradle.properties"
-            local.write_text("sdk.dir=/old/sdk\\nother=value\\n", encoding="utf-8")
-            gradle.write_text("custom=true\\nandroid.aapt2FromMavenOverride=/old/aapt2\\n", encoding="utf-8")
+            local.write_text("sdk.dir=/old/sdk\nother=value\n", encoding="utf-8")
+            gradle.write_text("custom=true\nandroid.aapt2FromMavenOverride=/old/aapt2\n", encoding="utf-8")
             env = {
                 "PREFIX": "/data/data/com.termux/files/usr",
                 "ANDROID_HOME": str(sdk),
@@ -103,9 +103,9 @@ class ApkForgeToolTests(unittest.TestCase):
             self.assertIn("custom=true", gradle_text)
             self.assertNotIn("/old/aapt2", gradle_text)
             apkforge.restore_termux_build_config(backups)
-            self.assertEqual(local.read_text(encoding="utf-8"), "sdk.dir=/old/sdk\\nother=value\\n")
+            self.assertEqual(local.read_text(encoding="utf-8"), "sdk.dir=/old/sdk\nother=value\n")
             self.assertEqual(gradle.read_text(encoding="utf-8"),
-                             "custom=true\\nandroid.aapt2FromMavenOverride=/old/aapt2\\n")
+                             "custom=true\nandroid.aapt2FromMavenOverride=/old/aapt2\n")
 
     def test_termux_build_config_is_noop_outside_termux(self):
         from unittest import mock
