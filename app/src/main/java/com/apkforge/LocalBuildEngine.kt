@@ -37,7 +37,7 @@ object LocalBuildEngine {
     const val TERMUX_PACKAGE = "com.termux"
     const val RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND"
     const val EXTERNAL_COMMAND_SETUP =
-        "mkdir -p ~/.termux && printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties && termux-reload-settings && termux-setup-storage"
+        "mkdir -p ~/.termux && touch ~/.termux/termux.properties && { grep -qxF 'allow-external-apps=true' ~/.termux/termux.properties || printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties; } && termux-reload-settings && termux-setup-storage"
 
     private const val DOWNLOAD_SUBFOLDER = "Download/APKForge/"
     private const val TERMUX_BASH = "/data/data/com.termux/files/usr/bin/bash"
