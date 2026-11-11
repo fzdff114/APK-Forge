@@ -307,7 +307,9 @@ object LocalBuildEngine {
               exit 20
             fi
             mkdir -p "§ANDROID_HOME"
+            set +o pipefail
             yes | "§SDKMANAGER" --sdk_root="§ANDROID_HOME" --licenses
+            set -o pipefail
             "§SDKMANAGER" --sdk_root="§ANDROID_HOME" \
               "platforms;android-35" "build-tools;36.1.0" "platform-tools"
 
@@ -377,7 +379,17 @@ object LocalBuildEngine {
             test -n "§APK" || { echo "Gradle succeeded but no debug APK was found."; exit 25; }
             unzip -t "§APK" >/dev/null
             unzip -Z1 "§APK" | grep -qx 'AndroidManifest.xml'
-            unzip -Z1 "§APK" | grep -Eq '(^|/)classes[0-9]*\.dex$'
+            unzip -Z1 "§APK" | grep -Eq '(^|/)classes[0-9]*\.dex
+            sha256sum "§APK_OUT"
+
+            echo "[6/6] APK created in Download/APKForge."
+            printf 'SUCCESS\n' > "§STATUS"
+            trap - EXIT
+        """.trimIndent().replace("§", "$") + "\n"
+    }
+}
+
+            apksigner verify --verbose "§APK"
             cp -f "§APK" "§APK_OUT"
             sha256sum "§APK_OUT"
 
