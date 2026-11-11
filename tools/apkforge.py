@@ -325,10 +325,12 @@ include(":app")
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.20" apply false
 }
 """,
-        "gradle.properties": """org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8
-org.gradle.parallel=true
+        "gradle.properties": """org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8
+org.gradle.daemon=false
+org.gradle.parallel=false
 org.gradle.caching=true
 android.useAndroidX=true
+kotlin.compiler.execution.strategy=in-process
 kotlin.code.style=official
 """,
         "app/build.gradle.kts": f"""plugins {{
@@ -452,6 +454,72 @@ def verify_apk(apk: Path):
             "zip_integrity": "ok", "manifest_present": True, "dex_files": dex, "verified": True}
 
 
+def apply_termux_build_config(root: Path):
+    """Temporarily point Gradle at Termux's Android-native SDK/aapt2 binaries."""
+    prefix = os.environ.get("PREFIX", "")
+    if "com.termux" not in prefix and "/data/data/com.termux/" not in prefix:
+        return None
+    sdk_value = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    if not sdk_value:
+        raise RuntimeError("Termux detected but ANDROID_HOME/ANDROID_SDK_ROOT is not set.")
+    sdk = Path(sdk_value).expanduser().resolve()
+    build_tools = sdk / "build-tools"
+    candidates = [p for p in build_tools.iterdir() if p.is_dir()] if build_tools.is_dir() else []
+    candidates.sort(key=lambda p: tuple(
+        int(part) if part.isdigit() else part for part in re.split(r"[.-]", p.name)
+    ))
+    aapt2 = next(
+        (p / "aapt2" for p in reversed(candidates)
+         if (p / "aapt2").is_file() and os.access(p / "aapt2", os.X_OK)),
+        None,
+    )
+    if aapt2 is None:
+        located = shutil.which("aapt2")
+        aapt2 = Path(located).resolve() if located else None
+    if aapt2 is None or not aapt2.is_file():
+        raise RuntimeError(
+            "Termux Android SDK has no executable native aapt2. Install the Termux android-sdk package."
+        )
+
+    backups: dict[Path, str | None] = {}
+
+    def set_properties(path: Path, values: dict[str, str]):
+        backups[path] = path.read_text(encoding="utf-8") if path.is_file() else None
+        lines = (backups[path] or "").splitlines()
+        keys = set(values)
+        lines = [
+            line for line in lines
+            if not any(line.lstrip().startswith(key + "=") for key in keys)
+        ]
+        lines.extend(f"{key}={value}" for key, value in values.items())
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    try:
+        set_properties(root / "local.properties", {
+            "sdk.dir": str(sdk),
+        })
+        set_properties(root / "gradle.properties", {
+            "android.aapt2FromMavenOverride": str(aapt2),
+            "android.overridePathCheck": "true",
+            "org.gradle.daemon": "false",
+            "org.gradle.parallel": "false",
+            "org.gradle.jvmargs": "-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8",
+            "kotlin.compiler.execution.strategy": "in-process",
+        })
+    except Exception:
+        restore_termux_build_config(backups)
+        raise
+    return backups
+
+
+def restore_termux_build_config(backups: dict[Path, str | None]):
+    for path, previous in backups.items():
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(previous, encoding="utf-8")
+
+
 def build(project: Path, timeout: int, confirm: bool, allow_errors: bool):
     if not confirm:
         raise PermissionError("Gradle scripts execute project code. Review the project and pass --confirm-gradle-code.")
@@ -470,28 +538,44 @@ def build(project: Path, timeout: int, confirm: bool, allow_errors: bool):
     log_dir = root / ".apkforge" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"build-{time.strftime('%Y%m%d-%H%M%S')}.log"
-    print("Running:", shlex.join(command))
-    print("Project:", root)
-    print("Log:", log_path)
+    termux_backups = None
     try:
-        result = subprocess.run(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, errors="replace", timeout=timeout, check=False)
-    except subprocess.TimeoutExpired as exc:
-        output = exc.stdout or ""
-        if isinstance(output, bytes): output = output.decode("utf-8", errors="replace")
-        log_path.write_text(output, encoding="utf-8")
-        raise TimeoutError(f"Gradle timed out after {timeout}s. Log: {log_path}") from exc
-    log_path.write_text(result.stdout or "", encoding="utf-8")
-    if result.returncode:
-        print((result.stdout or "")[-10000:], file=sys.stderr)
-        raise subprocess.CalledProcessError(result.returncode, command)
-    apks = sorted(root.glob("**/build/outputs/apk/debug/*.apk"),
-                  key=lambda item: item.stat().st_mtime, reverse=True)
-    if not apks:
-        raise RuntimeError(f"Gradle returned success but no debug APK was found. Log: {log_path}")
-    return {"project_root": str(root), "exit_code": result.returncode, "log": str(log_path),
-            "apk": verify_apk(apks[0])}
-
+        termux_backups = apply_termux_build_config(root)
+        if termux_backups is not None:
+            print("Detected Termux: using the on-device Android SDK and native aapt2.")
+        print("Running:", shlex.join(command))
+        print("Project:", root)
+        print("Log:", log_path)
+        try:
+            result = subprocess.run(
+                command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, errors="replace", timeout=timeout, check=False
+            )
+        except subprocess.TimeoutExpired as exc:
+            output = exc.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            log_path.write_text(output, encoding="utf-8")
+            raise TimeoutError(f"Gradle timed out after {timeout}s. Log: {log_path}") from exc
+        log_path.write_text(result.stdout or "", encoding="utf-8")
+        if result.returncode:
+            print((result.stdout or "")[-10000:], file=sys.stderr)
+            raise subprocess.CalledProcessError(result.returncode, command)
+        apks = sorted(
+            root.glob("**/build/outputs/apk/debug/*.apk"),
+            key=lambda item: item.stat().st_mtime, reverse=True
+        )
+        if not apks:
+            raise RuntimeError(f"Gradle returned success but no debug APK was found. Log: {log_path}")
+        return {
+            "project_root": str(root),
+            "exit_code": result.returncode,
+            "log": str(log_path),
+            "apk": verify_apk(apks[0]),
+        }
+    finally:
+        if termux_backups is not None:
+            restore_termux_build_config(termux_backups)
 
 def archive_project(project: Path, output: Path, max_mib: int):
     root = find_root(project)
