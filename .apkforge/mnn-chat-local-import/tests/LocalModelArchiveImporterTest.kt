@@ -36,6 +36,7 @@ class LocalModelArchiveImporterTest {
         val bytes = modelZip(
             "wrapped/Qwen/config.json",
             "wrapped/Qwen/llm.mnn",
+            "wrapped/Qwen/llm.mnn.weight",
             "wrapped/Qwen/llm_config.json",
             "wrapped/Qwen/tokenizer.mtok"
         )
@@ -47,6 +48,7 @@ class LocalModelArchiveImporterTest {
         assertTrue(imported.isDirectory)
         assertTrue(java.io.File(imported, "config.json").isFile)
         assertTrue(java.io.File(imported, "llm.mnn").isFile)
+        assertTrue(java.io.File(imported, "llm.mnn.weight").isFile)
         assertTrue(java.io.File(imported, "llm_config.json").isFile)
         assertTrue(java.io.File(imported, "tokenizer.mtok").isFile)
     }
