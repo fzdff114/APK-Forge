@@ -32,7 +32,7 @@ class LocalModelArchiveImporterTest {
 
     @Test
     fun importsOnlyACompleteMnnModelFromZip() {
-        val context = RuntimeEnvironment.getApplication<android.content.Context>()
+        val context = RuntimeEnvironment.getApplication()
         val bytes = modelZip(
             "wrapped/Qwen/config.json",
             "wrapped/Qwen/llm.mnn",
