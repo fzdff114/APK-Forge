@@ -331,8 +331,7 @@ def main() -> None:
     for source_path, target_path in extra_sources.items():
         if not source_path.is_file():
             raise FileNotFoundError(f"Missing extra patch source: {source_path}")
-        if not target_path.parent.is_dir():
-            raise FileNotFoundError(f"Missing target directory: {target_path.parent}")
+        target_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Validate every target before writing any files, so an outdated checkout is left untouched.
     for key, path in FILES.items():
