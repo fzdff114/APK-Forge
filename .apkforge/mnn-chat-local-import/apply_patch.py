@@ -323,6 +323,10 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspector.kt"),
         Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporter.kt":
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporter.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManager.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManager.kt"),
+        Path(__file__).parent / "tests/LocalModelConversionManagerTest.kt":
+            Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManagerTest.kt"),
         Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspectorTest.kt"),
         Path(__file__).parent / "tests/LocalModelArchiveImporterTest.kt":
