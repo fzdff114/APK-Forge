@@ -28,15 +28,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Configure Android SDK, NDK and CMake
-        uses: android-actions/setup-android@v3
-
       - name: Install required Android toolchains
         shell: bash
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
           set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
