@@ -55,7 +55,7 @@ class LocalModelArchiveImporterTest {
 
     @Test
     fun rejectsZipWithoutRunnableMnnFiles() {
-        val context = RuntimeEnvironment.getApplication<android.content.Context>()
+        val context = RuntimeEnvironment.getApplication()
         val bytes = modelZip("source/config.json", "source/model.safetensors")
 
         try {
