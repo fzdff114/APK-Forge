@@ -3,6 +3,7 @@ package com.alibaba.mnnllm.android.modelist
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -27,8 +28,18 @@ object LocalModelFolderImporter {
         }
         val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocumentId)
 
+        val rootChildren = queryChildren(context, treeUri, rootDocumentId)
+        val indexDocument = rootChildren.firstOrNull {
+            it.name.endsWith(".safetensors.index.json", ignoreCase = true)
+        }
+        val indexContents = if (indexDocument == null) {
+            emptyMap()
+        } else {
+            mapOf(indexDocument.name to readBoundedIndex(context, treeUri, indexDocument.id))
+        }
         val rootDetection = LocalModelFormatInspector.inspectDirectory(
-            queryChildren(context, treeUri, rootDocumentId).map { it.name }
+            rootChildren.map { it.name },
+            indexContents
         )
         if (rootDetection.format != LocalModelFormatInspector.Format.MNN ||
             rootDetection.state != LocalModelFormatInspector.State.READY_TO_IMPORT
@@ -79,6 +90,27 @@ object LocalModelFolderImporter {
         return children.any {
             it.name == "config.json" && it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR
         }
+    }
+
+    private fun readBoundedIndex(context: Context, treeUri: Uri, documentId: String): String {
+        val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        val input = context.contentResolver.openInputStream(uri)
+            ?: throw IOException("无法读取 Safetensors 权重索引。")
+        val output = ByteArrayOutputStream()
+        input.use { source ->
+            val buffer = ByteArray(8192)
+            var total = 0
+            while (true) {
+                val read = source.read(buffer)
+                if (read < 0) break
+                total += read
+                if (total > 4 * 1024 * 1024) {
+                    throw IOException("Safetensors 权重索引超过 4 MB 安全上限。")
+                }
+                output.write(buffer, 0, read)
+            }
+        }
+        return output.toString(Charsets.UTF_8.name())
     }
 
     private fun queryDisplayName(context: Context, documentUri: Uri): String {
