@@ -27,10 +27,13 @@ object LocalModelFolderImporter {
         }
         val rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootDocumentId)
 
-        if (!containsRootConfig(context, treeUri, rootDocumentId)) {
-            throw IllegalArgumentException(
-                context.getString(com.alibaba.mnnllm.android.R.string.local_model_invalid_folder)
-            )
+        val rootDetection = LocalModelFormatInspector.inspectDirectory(
+            queryChildren(context, treeUri, rootDocumentId).map { it.name }
+        )
+        if (rootDetection.format != LocalModelFormatInspector.Format.MNN ||
+            rootDetection.state != LocalModelFormatInspector.State.READY_TO_IMPORT
+        ) {
+            throw IllegalArgumentException(rootDetection.details)
         }
 
         val rootName = queryDisplayName(context, rootDocumentUri)
