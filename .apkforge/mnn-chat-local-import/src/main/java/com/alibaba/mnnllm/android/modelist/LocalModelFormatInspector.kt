@@ -33,7 +33,7 @@ object LocalModelFormatInspector {
     private val shardReference = Regex("\"([^\"]+\\.safetensors)\"")
     private val tokenizerFiles = setOf(
         "tokenizer.mtok", "tokenizer.txt", "tokenizer.json",
-        "tokenizer.model", "spiece.model", "vocab.json"
+        "tokenizer.model", "tokenizer_config.json", "spiece.model", "vocab.json", "vocab.txt"
     )
 
     fun inspectFile(displayName: String, header: ByteArray): Detection {
@@ -161,6 +161,7 @@ object LocalModelFormatInspector {
     private fun hasRunnableMnnFiles(rootNames: Set<String>): Boolean {
         return "config.json" in rootNames &&
             "llm.mnn" in rootNames &&
+            "llm.mnn.weight" in rootNames &&
             "llm_config.json" in rootNames &&
             rootNames.any { it == "tokenizer.mtok" || it == "tokenizer.txt" }
     }
