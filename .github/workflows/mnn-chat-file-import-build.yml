@@ -60,6 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cd "$RUNNER_TEMP/MNN"
           python3 "$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/apply_patch.py"
           APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
           python3 - "$APP_ROOT" <<'PY'
