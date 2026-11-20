@@ -51,7 +51,7 @@ object LocalModelFormatInspector {
                 return Detection(Format.GGUF, State.INVALID, name, "GGUF 文件头无效或文件已损坏。")
             }
             val version = ByteBuffer.wrap(header, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int
-            if (version !in 2..3) {
+            if (version !in 1..3) {
                 return Detection(Format.GGUF, State.RECOGNIZED_NOT_CONVERTIBLE_HERE, name,
                     "已识别 GGUF，但版本 $version 不在当前检查器支持的范围内。")
             }
@@ -82,6 +82,8 @@ object LocalModelFormatInspector {
                     }
                 }
             }
+            "mnn", "weight" -> Detection(Format.MNN, State.RECOGNIZED_INCOMPLETE, name,
+                "这是单个 MNN 模型文件；请导入包含配置、权重和 tokenizer 的完整模型文件夹。")
             "onnx" -> Detection(Format.ONNX, State.RECOGNIZED_NOT_CONVERTIBLE_HERE, name,
                 "已识别 ONNX。它不是可直接运行的 MNN 聊天模型，当前版本不提供 ONNX LLM 转换。")
             "tflite" -> Detection(Format.TFLITE, State.RECOGNIZED_NOT_CONVERTIBLE_HERE, name,
