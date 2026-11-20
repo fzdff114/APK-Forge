@@ -211,8 +211,12 @@ def main() -> None:
     extra_sources = {
         Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspector.kt":
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspector.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporter.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporter.kt"),
         Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspectorTest.kt"),
+        Path(__file__).parent / "tests/LocalModelArchiveImporterTest.kt":
+            Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporterTest.kt"),
     }
     for source_path, target_path in extra_sources.items():
         if not source_path.is_file():
