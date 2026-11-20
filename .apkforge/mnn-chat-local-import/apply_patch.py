@@ -258,9 +258,9 @@ def main() -> None:
     )
     contents["local_provider"] = replace_once(
         contents["local_provider"],
-        "import com.alibaba.mls.api.ModelItem\\n",
+        "import com.alibaba.mls.api.ModelItem\n",
         "import com.alibaba.mls.api.ModelItem\\n"
-        "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\\n",
+        "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\n",
         "LocalModelsProvider format inspector import",
     )
 
