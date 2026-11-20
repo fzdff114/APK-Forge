@@ -200,7 +200,7 @@ def main() -> None:
     main_activity = replace_once(
         main_activity,
         "    fun runModel(destModelDir: String?, modelIdParam: String?, sessionId: String?) {",
-        import_methods + methodsReplacement + "    fun runModel(destModelDir: String?, modelIdParam: String?, sessionId: String?) {",
+        import_methods + "    fun runModel(destModelDir: String?, modelIdParam: String?, sessionId: String?) {",
         "MainActivity import methods",
     )
     contents["main_activity"] = main_activity
