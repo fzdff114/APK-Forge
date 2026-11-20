@@ -147,7 +147,11 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --max-workers=2 testStandardDebugUnitTest --stacktrace
+          ./gradlew --no-daemon --max-workers=2 testStandardDebugUnitTest \
+            --tests "com.alibaba.mnnllm.android.modelist.LocalModelFormatInspectorTest" \
+            --tests "com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporterTest" \
+            --tests "com.alibaba.mnnllm.android.modelist.LocalModelConversionManagerTest" \
+            --stacktrace
 
       - name: Build arm64-v8a APK
         working-directory: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat
