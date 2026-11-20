@@ -38,6 +38,7 @@ def main() -> None:
         "import android.content.Intent\n"
         "import android.app.ProgressDialog\n"
         "import android.net.Uri\n"
+        "import android.provider.OpenableColumns\n"
         "import androidx.activity.result.contract.ActivityResultContracts\n"
         "import androidx.lifecycle.lifecycleScope\n",
         "MainActivity imports (Android)",
@@ -47,7 +48,9 @@ def main() -> None:
         "import com.alibaba.mnnllm.android.modelist.ModelListFragment\n",
         "import com.alibaba.mnnllm.android.modelist.ModelListFragment\n"
         "import com.alibaba.mnnllm.android.modelist.ModelListManager\n"
-        "import com.alibaba.mnnllm.android.modelist.LocalModelFolderImporter\n",
+        "import com.alibaba.mnnllm.android.modelist.LocalModelFolderImporter\n"
+        "import com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporter\n"
+        "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\n",
         "MainActivity imports (model list)",
     )
     main_activity = replace_once(
@@ -69,6 +72,13 @@ def main() -> None:
         "    private lateinit var mainFragmentManager: MainFragmentManager\n",
         "    private lateinit var mainFragmentManager: MainFragmentManager\n" + picker_property,
         "MainActivity folder-picker property",
+    )
+    file_picker_property = '''\n    // Single-file picker is used for GGUF, ZIP and diagnostic format recognition.\n    private val localModelFilePicker = registerForActivityResult(\n        ActivityResultContracts.OpenDocument()\n    ) { uri ->\n        if (uri != null) {\n            importLocalModelFile(uri)\n        }\n    }\n'''
+    main_activity = replace_once(
+        main_activity,
+        "    private val currentFragment: Fragment?\n",
+        file_picker_property + "    private val currentFragment: Fragment?\n",
+        "MainActivity model-file picker property",
     )
 
     import_methods = '''    /** Opens Android's system folder picker and imports a model without requiring a computer. */
@@ -109,11 +119,88 @@ def main() -> None:
         }
     }
 
+    /** Opens the system file picker. Model tensors remain on-device and are never uploaded. */
+    fun addLocalModelFile(view: View?) {
+        localModelFilePicker.launch(arrayOf("*/*"))
+    }
+
+    private fun queryLocalModelDisplayName(uri: Uri): String {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) return cursor.getString(index) ?: "model"
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/') ?: "model"
+    }
+
+    private fun importLocalModelFile(uri: Uri) {
+        val displayName = queryLocalModelDisplayName(uri)
+        val progressDialog = ProgressDialog(this).apply {
+            setTitle(R.string.local_model_import_title)
+            setMessage(getString(R.string.local_model_import_progress))
+            setCancelable(false)
+            show()
+        }
+
+        lifecycleScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val header = contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = ByteArray(8)
+                        var count = 0
+                        while (count < bytes.size) {
+                            val read = input.read(bytes, count, bytes.size - count)
+                            if (read <= 0) break
+                            count += read
+                        }
+                        bytes.copyOf(count)
+                    } ?: byteArrayOf()
+                    val detection = LocalModelFormatInspector.inspectFile(displayName, header)
+                    val importedDirectory = if (detection.format == LocalModelFormatInspector.Format.ZIP &&
+                        detection.state != LocalModelFormatInspector.State.INVALID
+                    ) {
+                        val zipInput = contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("无法读取所选 ZIP 文件。")
+                        zipInput.use {
+                            LocalModelArchiveImporter.importMnnZip(this@MainActivity, it, displayName)
+                        }
+                    } else {
+                        null
+                    }
+                    Pair(importedDirectory, detection)
+                }
+
+                val importedDirectory = result.first
+                if (importedDirectory != null) {
+                    ModelListManager.clearModelCache()
+                    ModelListManager.notifyModelListMayChange(ModelListManager.ChangeReason.MANUAL_REFRESH)
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.local_model_import_success, importedDirectory.name),
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(this@MainActivity, result.second.details, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to inspect or import a local model file", e)
+                Toast.makeText(
+                    this@MainActivity,
+                    getString(R.string.local_model_import_failed, e.message ?: "Unknown error"),
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                progressDialog.dismiss()
+            }
+        }
+    }
+
 '''
     main_activity = replace_once(
         main_activity,
         "    fun runModel(destModelDir: String?, modelIdParam: String?, sessionId: String?) {",
-        import_methods + "    fun runModel(destModelDir: String?, modelIdParam: String?, sessionId: String?) {",
+        import_methods + methodsReplacement + "    fun runModel(destModelDir: String?, modelIdParam: String?, sessionId: String?) {",
         "MainActivity import methods",
     )
     contents["main_activity"] = main_activity
@@ -192,10 +279,18 @@ def main() -> None:
                 app:label_text="@string/add_local_model_from_files"
                 app:fab_icon="@drawable/ic_u_folder"
                 android:onClick="addLocalModelFromFiles"/>
+            <com.nambimobile.widgets.efab.FabOption
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:fab_orientation="portrait"
+                app:label_text="@string/add_local_model_file"
+                app:fab_icon="@drawable/ic_model"
+                android:onClick="addLocalModelFile"/>
 '''
     contents["main_layout"] = replace_once(contents["main_layout"], fab_anchor, fab_addition, "main-page FAB option")
 
-    zh_entries = '''    <string name="add_local_model_from_files">从文件管理器导入</string>
+    zh_entries = '''    <string name="add_local_model_from_files">从文件管理器导入 MNN 文件夹</string>
+    <string name="add_local_model_file">识别 GGUF、ZIP 等模型文件</string>
     <string name="local_model_import_title">导入本地模型</string>
     <string name="local_model_import_progress">正在复制模型文件，请保持应用运行…</string>
     <string name="local_model_import_success">本地模型已导入：%1$s</string>
@@ -206,7 +301,8 @@ def main() -> None:
         contents["strings_zh"], "</resources>", zh_entries + "</resources>", "Chinese import strings"
     )
 
-    en_entries = '''    <string name="add_local_model_from_files">Import from File Manager</string>
+    en_entries = '''    <string name="add_local_model_from_files">Import MNN Folder from File Manager</string>
+    <string name="add_local_model_file">Inspect GGUF, ZIP and Model Files</string>
     <string name="local_model_import_title">Import Local Model</string>
     <string name="local_model_import_progress">Copying model files. Keep the app open…</string>
     <string name="local_model_import_success">Model imported: %1$s</string>
