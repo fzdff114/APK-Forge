@@ -208,6 +208,18 @@ def main() -> None:
         raise FileNotFoundError(f"Missing helper source in patch package: {helper_source}")
     helper_text = helper_source.read_text(encoding="utf-8")
 
+    extra_sources = {
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspector.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspector.kt"),
+        Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
+            Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspectorTest.kt"),
+    }
+    for source_path, target_path in extra_sources.items():
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Missing extra patch source: {source_path}")
+        if not target_path.parent.is_dir():
+            raise FileNotFoundError(f"Missing target directory: {target_path.parent}")
+
     # Validate every target before writing any files, so an outdated checkout is left untouched.
     for key, path in FILES.items():
         if not path.parent.is_dir():
@@ -217,6 +229,8 @@ def main() -> None:
     for key, path in FILES.items():
         path.write_text(contents[key], encoding="utf-8")
     helper_path.write_text(helper_text, encoding="utf-8")
+    for source_path, target_path in extra_sources.items():
+        target_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
 
     print("Patch applied successfully. Updated files:")
     for path in [*FILES.values(), helper_path]:
