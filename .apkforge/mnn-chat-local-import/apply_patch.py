@@ -147,10 +147,17 @@ def main() -> None:
             modelRoots.forEach { modelsDir ->
                 if (modelsDir.exists() && modelsDir.isDirectory) {
                     modelsDir.listFiles()?.forEach { modelDir ->
-                        if (modelDir.isDirectory && File(modelDir, "config.json").isFile) {
-                            val modelPath = modelDir.absolutePath
-                            val modelId = "local/${modelPath}"
-                            result.add(ModelItem.fromLocalModel(modelId, modelPath))
+                        if (modelDir.isDirectory) {
+                            val detection = LocalModelFormatInspector.inspectDirectory(
+                                modelDir.listFiles()?.map { it.name } ?: emptyList()
+                            )
+                            if (detection.format == LocalModelFormatInspector.Format.MNN &&
+                                detection.state == LocalModelFormatInspector.State.READY_TO_IMPORT
+                            ) {
+                                val modelPath = modelDir.absolutePath
+                                val modelId = "local/${modelPath}"
+                                result.add(ModelItem.fromLocalModel(modelId, modelPath))
+                            }
                         }
                     }
                 }
@@ -161,6 +168,13 @@ def main() -> None:
 '''
     contents["local_provider"] = replace_once(
         contents["local_provider"], old_provider_block, new_provider_block, "LocalModelsProvider scanning logic"
+    )
+    contents["local_provider"] = replace_once(
+        contents["local_provider"],
+        "import com.alibaba.mls.api.ModelItem\\n",
+        "import com.alibaba.mls.api.ModelItem\\n"
+        "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\\n",
+        "LocalModelsProvider format inspector import",
     )
 
     fab_anchor = '''            <com.nambimobile.widgets.efab.FabOption
