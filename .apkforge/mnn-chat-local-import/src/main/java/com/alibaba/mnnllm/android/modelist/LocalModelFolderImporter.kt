@@ -52,10 +52,13 @@ object LocalModelFolderImporter {
 
         try {
             copyChildren(context, treeUri, rootDocumentId, staging)
-            if (!File(staging, "config.json").isFile) {
-                throw IOException(
-                    context.getString(com.alibaba.mnnllm.android.R.string.local_model_invalid_folder)
-                )
+            val copiedDetection = LocalModelFormatInspector.inspectDirectory(
+                staging.listFiles()?.map { it.name } ?: emptyList()
+            )
+            if (copiedDetection.format != LocalModelFormatInspector.Format.MNN ||
+                copiedDetection.state != LocalModelFormatInspector.State.READY_TO_IMPORT
+            ) {
+                throw IOException(copiedDetection.details)
             }
             if (!staging.renameTo(destination)) {
                 throw IOException("Unable to finish importing the model folder")
