@@ -56,7 +56,7 @@ object LocalModelFormatInspector {
                     "已识别 GGUF，但版本 $version 不在当前检查器支持的范围内。")
             }
             return Detection(Format.GGUF, State.RECOGNIZED_NEEDS_TEMPLATE, name,
-                "已识别 GGUF v$version。离线转换还需要匹配模型架构的 MNN 结构模板和对应转换后端。")
+                "已识别 GGUF v$version。此 APK 尚未集成 GGUF→MNN 本地权重转换后端；当前只能识别，不能转换导入。")
         }
 
         if (extension == "zip" || isZipMagic) {
@@ -129,7 +129,7 @@ object LocalModelFormatInspector {
             }
             return Detection(Format.HUGGINGFACE_SAFETENSORS, State.RECOGNIZED_NEEDS_TEMPLATE,
                 "Hugging Face Safetensors",
-                "已发现配置、tokenizer 和 ${weightFiles.size} 个权重文件。离线转换仍需匹配的 MNN 模型结构模板及转换后端。")
+                "已发现配置、tokenizer 和 ${weightFiles.size} 个权重文件。此 APK 尚未集成 Safetensors→MNN 本地权重转换后端，当前不能转换导入。")
         }
 
         if (weightFiles.isNotEmpty()) {
