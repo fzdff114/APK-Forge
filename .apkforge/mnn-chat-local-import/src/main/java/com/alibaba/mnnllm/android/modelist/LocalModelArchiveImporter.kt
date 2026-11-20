@@ -22,6 +22,15 @@ object LocalModelArchiveImporter {
     fun importMnnZip(context: Context, input: InputStream, displayName: String): File {
         val modelsRoot = context.getExternalFilesDir("local_models")
             ?: File(context.filesDir, "local_models")
+        return importMnnZipToDirectory(input, modelsRoot, displayName)
+    }
+
+    /**
+     * JVM-only import entry point so archive security and model validation tests do not need
+     * to boot an Android/Robolectric application.
+     */
+    @Throws(IOException::class)
+    internal fun importMnnZipToDirectory(input: InputStream, modelsRoot: File, displayName: String): File {
         if (!modelsRoot.exists() && !modelsRoot.mkdirs()) {
             throw IOException("无法创建本地模型目录。")
         }
