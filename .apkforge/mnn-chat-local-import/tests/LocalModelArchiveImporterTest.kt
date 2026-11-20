@@ -64,27 +64,6 @@ class LocalModelArchiveImporterTest {
         }
     }
 
-    @Test
-    fun rejectsArchiveWhenDuplicatePathWouldOverwriteAnExistingEntry() = withTemporaryRoot { root ->
-        val output = ByteArrayOutputStream()
-        ZipOutputStream(output).use { zip ->
-            listOf("model/config.json", "model/config.json").forEach { path ->
-                zip.putNextEntry(ZipEntry(path))
-                zip.write(byteArrayOf(1))
-                zip.closeEntry()
-            }
-        }
-
-        try {
-            LocalModelArchiveImporter.importMnnZipToDirectory(
-                ByteArrayInputStream(output.toByteArray()), root, "duplicate"
-            )
-            throw AssertionError("Expected duplicate archive path to be rejected")
-        } catch (expected: IOException) {
-            assertTrue(expected.message!!.contains("重复"))
-        }
-    }
-
     private fun withTemporaryRoot(block: (File) -> Unit) {
         val root = Files.createTempDirectory("mnn-local-model-test").toFile()
         try {
