@@ -4,16 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-@RunWith(RobolectricTestRunner::class)
 class LocalModelArchiveImporterTest {
     @Test
     fun rejectsAbsoluteAndTraversalPaths() {
@@ -31,8 +29,7 @@ class LocalModelArchiveImporterTest {
     }
 
     @Test
-    fun importsOnlyACompleteMnnModelFromZip() {
-        val context = RuntimeEnvironment.getApplication()
+    fun importsOnlyACompleteMnnModelFromZip() = withTemporaryRoot { root ->
         val bytes = modelZip(
             "wrapped/Qwen/config.json",
             "wrapped/Qwen/llm.mnn",
@@ -41,28 +38,59 @@ class LocalModelArchiveImporterTest {
             "wrapped/Qwen/tokenizer.mtok"
         )
 
-        val imported = LocalModelArchiveImporter.importMnnZip(
-            context, ByteArrayInputStream(bytes), "qwen-bundle.zip"
+        val imported = LocalModelArchiveImporter.importMnnZipToDirectory(
+            ByteArrayInputStream(bytes), root, "qwen-bundle"
         )
 
         assertTrue(imported.isDirectory)
-        assertTrue(java.io.File(imported, "config.json").isFile)
-        assertTrue(java.io.File(imported, "llm.mnn").isFile)
-        assertTrue(java.io.File(imported, "llm.mnn.weight").isFile)
-        assertTrue(java.io.File(imported, "llm_config.json").isFile)
-        assertTrue(java.io.File(imported, "tokenizer.mtok").isFile)
+        assertTrue(File(imported, "config.json").isFile)
+        assertTrue(File(imported, "llm.mnn").isFile)
+        assertTrue(File(imported, "llm.mnn.weight").isFile)
+        assertTrue(File(imported, "llm_config.json").isFile)
+        assertTrue(File(imported, "tokenizer.mtok").isFile)
     }
 
     @Test
-    fun rejectsZipWithoutRunnableMnnFiles() {
-        val context = RuntimeEnvironment.getApplication()
+    fun rejectsZipWithoutRunnableMnnFiles() = withTemporaryRoot { root ->
         val bytes = modelZip("source/config.json", "source/model.safetensors")
 
         try {
-            LocalModelArchiveImporter.importMnnZip(context, ByteArrayInputStream(bytes), "source.zip")
+            LocalModelArchiveImporter.importMnnZipToDirectory(
+                ByteArrayInputStream(bytes), root, "source"
+            )
             throw AssertionError("Expected archive without MNN files to be rejected")
         } catch (expected: IOException) {
             assertTrue(expected.message!!.contains("没有完整的 MNN 模型目录"))
+        }
+    }
+
+    @Test
+    fun rejectsArchiveWhenDuplicatePathWouldOverwriteAnExistingEntry() = withTemporaryRoot { root ->
+        val output = ByteArrayOutputStream()
+        ZipOutputStream(output).use { zip ->
+            listOf("model/config.json", "model/config.json").forEach { path ->
+                zip.putNextEntry(ZipEntry(path))
+                zip.write(byteArrayOf(1))
+                zip.closeEntry()
+            }
+        }
+
+        try {
+            LocalModelArchiveImporter.importMnnZipToDirectory(
+                ByteArrayInputStream(output.toByteArray()), root, "duplicate"
+            )
+            throw AssertionError("Expected duplicate archive path to be rejected")
+        } catch (expected: IOException) {
+            assertTrue(expected.message!!.contains("重复"))
+        }
+    }
+
+    private fun withTemporaryRoot(block: (File) -> Unit) {
+        val root = Files.createTempDirectory("mnn-local-model-test").toFile()
+        try {
+            block(root)
+        } finally {
+            root.deleteRecursively()
         }
     }
 
