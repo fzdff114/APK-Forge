@@ -287,7 +287,7 @@ b = main.index("    /** Opens the system file picker.", a)
 main = main[:a] + r'''    private fun importLocalModelFromUri(treeUri: Uri) {
         val dialog = ProgressDialog(this).apply {
             setTitle(R.string.local_model_import_title)
-            setMessage(R.string.local_model_import_progress)
+            setMessage(getString(R.string.local_model_import_progress))
             setCancelable(false)
             show()
         }
@@ -325,7 +325,7 @@ main = main[:a] + r'''    private fun importLocalModelFile(uri: Uri) {
         if (displayName.endsWith(".gguf", ignoreCase = true)) {
             val dialog = ProgressDialog(this).apply {
                 setTitle(R.string.local_model_import_title)
-                setMessage(R.string.local_model_import_progress)
+                setMessage(getString(R.string.local_model_import_progress))
                 setCancelable(false)
                 show()
             }
@@ -347,7 +347,7 @@ main = main[:a] + r'''    private fun importLocalModelFile(uri: Uri) {
 
         val dialog = ProgressDialog(this).apply {
             setTitle(R.string.local_model_import_title)
-            setMessage(R.string.local_model_import_progress)
+            setMessage(getString(R.string.local_model_import_progress))
             setCancelable(false)
             show()
         }
