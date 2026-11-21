@@ -118,8 +118,9 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_lastLoadError(JNIEnv *env, jobj
     }
     return env->NewStringUTF(details.c_str());
 }'''
-if (ai_chat.split(old_model_load).length !== 2) throw new Error("Native model load return anchor mismatch");
-ai_chat = ai_chat.replace(old_model_load, new_model_load);
+if ai_chat.count(old_model_load) != 1:
+    raise SystemExit("Could not locate native model load return anchor")
+ai_chat = ai_chat.replace(old_model_load, new_model_load, 1)
 ai_chat_path.write_text(ai_chat, encoding="utf-8")
 upstream_logging = llama / "examples/llama.android/lib/src/main/cpp/logging.h"
 copy(upstream_logging, cpp / "logging.h")
