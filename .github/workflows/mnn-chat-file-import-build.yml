@@ -103,10 +103,14 @@ jobs:
           ''' + source[install_end:]
 
           register_start = source.index("        fun registerDownloadReceiver(")
-          register_end = source.index("\n\n    }\n\n}", register_start)
+          # It is the final method in the companion object; replace through EOF and close both scopes.
           source = source[:register_start] + '''        fun registerDownloadReceiver(context: Context) {
                       Log.i(TAG, "Built-in app update receiver is disabled in this build.")
-                  }''' + source[register_end:]
+                  }
+
+              }
+          }
+          '''
           checker.write_text(source, encoding="utf-8")
           print("Removed built-in update requests, comparison, popup/download, installer and receiver.")
 
