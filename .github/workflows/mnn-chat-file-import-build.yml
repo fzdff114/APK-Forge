@@ -107,6 +107,33 @@ jobs:
           print("Variant identity set to com.alibaba.mnnllm.android.localimport (install alongside stock app).")
           PY
 
+      - name: Add Maven Central mirror fallback for CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          SETTINGS="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat/settings.gradle"
+          python3 - "$SETTINGS" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          anchor = "repositories {\n        mavenCentral()"
+          replacement = """repositories {
+                  maven { url 'https://maven.aliyun.com/repository/google' }
+                  maven { url 'https://maven.aliyun.com/repository/central' }
+                  maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+                  mavenCentral()"""
+          if source.count(anchor) != 2:
+              raise SystemExit(
+                  f"Expected pluginManagement and dependencyResolution repositories, "
+                  f"found {source.count(anchor)}"
+              )
+          path.write_text(source.replace(anchor, replacement), encoding="utf-8")
+          print("Added Aliyun Google/Central/Gradle-plugin mirrors before upstream repositories.")
+          PY
+          grep -n "maven.aliyun.com" "$SETTINGS"
+
       - name: Build MNN runtime from the same source revision
         shell: bash
         run: |
