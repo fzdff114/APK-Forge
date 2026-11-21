@@ -535,12 +535,92 @@ object LocalGgufModelImporter {
      * must not reject a valid GGUF merely because it encounters a metadata encoding it does not
      * yet understand.
      */
+    private fun sha256(file: File, maxBytes: Long = -1L): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            var remaining = maxBytes
+            while (remaining != 0L) {
+                val requested = if (remaining > 0L) minOf(buffer.size.toLong(), remaining).toInt()
+                    else buffer.size
+                val count = input.read(buffer, 0, requested)
+                if (count < 0) break
+                if (count == 0) continue
+                digest.update(buffer, 0, count)
+                if (remaining > 0L) remaining -= count.toLong()
+            }
+            if (remaining > 0L) throw IOException("文件在 SHA-256 校验期间提前结束。")
+        }
+        return digest.digest().joinToString("") {
+            (it.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
+    }
+
+    private fun validateKnownDeepSeek(file: File): Long {
+        val expectedSize = VerifiedDeepSeekDownloader.EXPECTED_SIZE
+        val expectedHash = VerifiedDeepSeekDownloader.EXPECTED_SHA256
+        var actualSize = file.length()
+
+        // Some document providers append a 512-byte trailer. Remove it only when the entire
+        // expected-size prefix hashes to the known-good ModelScope artifact; never guess.
+        if (actualSize == expectedSize + 512L) {
+            val prefixHash = sha256(file, expectedSize)
+            if (prefixHash == expectedHash) {
+                java.io.RandomAccessFile(file, "rw").use { random ->
+                    random.setLength(expectedSize)
+                    random.fd.sync()
+                }
+                actualSize = file.length()
+            }
+        }
+
+        if (actualSize != expectedSize) {
+            val actualHash = sha256(file)
+            throw IOException(
+                "DeepSeek Q2_K 文件与已验证原件不一致，已阻止加载。" +
+                    "标准大小：$expectedSize 字节；当前：$actualSize 字节；" +
+                    "当前 SHA-256：$actualHash。请使用模型库中的“下载已验证 DeepSeek”按钮，" +
+                    "不要继续使用此副本。"
+            )
+        }
+
+        val actualHash = sha256(file)
+        if (actualHash != expectedHash) {
+            throw IOException(
+                "DeepSeek Q2_K 文件 SHA-256 不匹配，已阻止加载。" +
+                    "应为：$expectedHash；当前：$actualHash。请重新下载已验证模型。"
+            )
+        }
+
+        // This parser is also exercised against the exact same source artifact in CI.
+        when (val result = file.inputStream().buffered().use { GgufMetadataReader.inspect(it) }) {
+            is GgufMetadataReader.Result.Success -> if (result.metadata.tensorCount <= 0L) {
+                throw IOException("已校验的 DeepSeek 文件没有有效张量。")
+            }
+            is GgufMetadataReader.Result.Failure -> {
+                throw IOException("已校验 DeepSeek 文件的 GGUF 元数据解析失败：\${result.reason}")
+            }
+        }
+        return actualSize
+    }
+
+    /**
+     * Validate the fixed GGUF preamble. The known DeepSeek test file also receives a full
+     * SHA-256 check, because its previous phone copy differed from the verified artifact by 512
+     * bytes and llama.cpp consequently read chat-template bytes as a string length.
+     */
     private fun validateGgufHeader(file: File, expectedSize: Long = -1L) {
-        val actualSize = file.length()
+        var actualSize = file.length()
+        val isKnownDeepSeek = file.name.equals(
+            VerifiedDeepSeekDownloader.MODEL_NAME, ignoreCase = true
+        )
+        if (isKnownDeepSeek) {
+            actualSize = validateKnownDeepSeek(file)
+        }
         if (!file.isFile || actualSize < 24L) {
             throw IOException("GGUF 文件头不完整：本地文件仅 $actualSize 字节。")
         }
-        if (expectedSize > 0L && actualSize != expectedSize) {
+        if (!isKnownDeepSeek && expectedSize > 0L && actualSize != expectedSize) {
             throw IOException(
                 "GGUF 复制长度不匹配：来源报告 $expectedSize 字节，本地副本 $actualSize 字节。"
             )
@@ -584,7 +664,6 @@ object LocalGgufModelImporter {
         if (tensorCount <= 0L) {
             throw IOException("GGUF 文件未包含有效模型张量：本地副本 $actualSize 字节。")
         }
-        // Full metadata/tensor parsing is intentionally deferred to llama.cpp at load time.
     }
 
     private fun copyChecked(
@@ -628,7 +707,10 @@ object LocalGgufModelImporter {
         }
         val actualSize = target.length()
         if (actualSize <= 8L) throw IOException("GGUF 文件为空或已损坏。")
-        if (expectedSize > 0L && actualSize != expectedSize) {
+        val isKnownDeepSeek = target.name.equals(
+            VerifiedDeepSeekDownloader.MODEL_NAME, ignoreCase = true
+        )
+        if (expectedSize > 0L && actualSize != expectedSize && !isKnownDeepSeek) {
             throw IOException(
                 "GGUF 复制不完整：来源文件 " + expectedSize + " 字节，实际保存 " +
                     actualSize + " 字节。请重新下载模型后再导入。"
