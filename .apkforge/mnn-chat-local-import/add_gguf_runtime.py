@@ -529,6 +529,7 @@ if anchor not in main: raise SystemExit("Cannot locate MainActivity model import
 for line in [
     "import com.alibaba.mnnllm.android.modelist.LocalGgufModelImporter\n",
     "import com.alibaba.mnnllm.android.modelist.GgufChatActivity\n",
+    "import com.alibaba.mnnllm.android.modelist.GgufModelLibraryActivity\n",
 ]:
     if line not in main: main = main.replace(anchor, anchor + line, 1)
 
@@ -638,6 +639,16 @@ main = main[:a] + r'''    private fun importLocalModelFile(uri: Uri) {
     }
 
 ''' + main[b:]
+library_entry_method = """    fun openGgufModelLibrary(view: android.view.View?) {
+        startActivity(Intent(this, GgufModelLibraryActivity::class.java))
+    }
+
+"""
+run_anchor = "    fun runModel("
+if main.count(run_anchor) != 1:
+    raise SystemExit("Cannot locate MainActivity runModel entry point")
+if "fun openGgufModelLibrary(" not in main:
+    main = main.replace(run_anchor, library_entry_method + run_anchor, 1)
 main_path.write_text(main)
 
 # Force app name in all locale resources and manifest.
@@ -663,6 +674,15 @@ if ".modelist.GgufChatActivity" not in value:
     pos = value.rfind("    </application>")
     if pos < 0: raise SystemExit("No application end in manifest")
     value = value[:pos] + decl + value[pos:]
+library_decl = '''        <activity
+            android:name=".modelist.GgufModelLibraryActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+ '''
+if ".modelist.GgufModelLibraryActivity" not in value:
+    pos = value.rfind("    </application>")
+    if pos < 0: raise SystemExit("No application end in manifest")
+    value = value[:pos] + library_decl + value[pos:]
 manifest.write_text(value)
 
 # Remove custom icon overlay from the previous build.
@@ -677,8 +697,8 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 835", "versionCode 840"),
-    ('versionName "0.8.7"', 'versionName "0.9.1"'),
+    ("versionCode 835", "versionCode 841"),
+    ('versionName "0.8.7"', 'versionName "0.9.2"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
     if value.count(old) != 1: raise SystemExit(f"Missing Gradle anchor: {old}")
@@ -741,4 +761,4 @@ target_link_libraries(ai-chat PRIVATE llama llama-common android log)
 
 print("GGUF direct Android runtime, file/folder import and chat activity integrated.")
 print("Restored exact MNN Chat label and original adaptive icon, no edition badge.")
-print("Version set to 0.9.1/code 840; safe side-by-side applicationId retained.")
+print("Version set to 0.9.2/code 841; safe side-by-side applicationId retained.")
