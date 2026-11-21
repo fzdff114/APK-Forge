@@ -213,6 +213,7 @@ engine_path.write_text(engine.replace(anchor, """        llamaScope.cancel()
 importer = r'''package com.alibaba.mnnllm.android.modelist
 import android.content.Context
 import android.net.Uri
+import android.os.CancellationSignal
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -223,13 +224,22 @@ import java.util.UUID
 object LocalGgufModelImporter {
     private val shardPattern = Regex("(?i)-(\\d{5})-of-(\\d{5})\\.gguf$")
 
-    fun copyFromUri(context: Context, uri: Uri, displayName: String): File {
+    fun copyFromUri(
+        context: Context,
+        uri: Uri,
+        displayName: String,
+        cancellationSignal: CancellationSignal? = null,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): File {
         if (shardPattern.containsMatchIn(displayName))
             throw IOException("检测到 GGUF 分片文件。请直接选择包含全部分片的文件夹，不要只选择单个分片。")
         val folder = createFolder(context, displayName)
         try {
             val target = File(folder, safeName(displayName))
-            copyChecked(context, uri, target)
+            copyChecked(
+                context, uri, target,
+                reportedSize(context, uri), cancellationSignal, onProgress
+            )
             return target
         } catch (e: Exception) {
             folder.deleteRecursively()
@@ -237,7 +247,12 @@ object LocalGgufModelImporter {
         }
     }
 
-    fun copyFromTree(context: Context, uri: Uri): File? {
+    fun copyFromTree(
+        context: Context,
+        uri: Uri,
+        cancellationSignal: CancellationSignal? = null,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): File? {
         val tree = DocumentFile.fromTreeUri(context, uri) ?: throw IOException("无法读取所选文件夹。")
         val found = mutableListOf<Pair<DocumentFile, String>>()
         collect(tree, "", 0, found)
@@ -264,12 +279,22 @@ object LocalGgufModelImporter {
         }
         val folder = createFolder(context, mainName)
         try {
-            files.forEach { (doc, _) ->
+            val expectedSizes = files.map { (doc, _) ->
+                doc.length().takeIf { it > 0L } ?: reportedSize(context, doc.uri)
+            }
+            val totalBytes = expectedSizes.filter { it > 0L }.sum()
+            var copiedBefore = 0L
+            files.forEachIndexed { index, (doc, _) ->
+                cancellationSignal?.throwIfCanceled()
                 val name = doc.name ?: throw IOException("GGUF 文件缺少名称。")
+                val expected = expectedSizes[index]
                 copyChecked(
-                    context, doc.uri, File(folder, safeName(name)),
-                    doc.length().takeIf { it > 0L } ?: reportedSize(context, doc.uri)
-                )
+                    context, doc.uri, File(folder, safeName(name)), expected,
+                    cancellationSignal
+                ) { copied, _ ->
+                    onProgress?.invoke(copiedBefore + copied, totalBytes)
+                }
+                if (expected > 0L) copiedBefore += expected
             }
             return File(folder, safeName(mainName))
         } catch (e: Exception) {
@@ -303,13 +328,20 @@ object LocalGgufModelImporter {
     }
 
     private fun copyChecked(
-        context: Context, uri: Uri, target: File, expectedSize: Long = reportedSize(context, uri)
+        context: Context,
+        uri: Uri,
+        target: File,
+        expectedSize: Long = reportedSize(context, uri),
+        cancellationSignal: CancellationSignal? = null,
+        onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
     ) {
         val input = context.contentResolver.openInputStream(uri) ?: throw IOException("无法打开 GGUF 文件。")
         input.use { source ->
+            cancellationSignal?.throwIfCanceled()
             val magic = ByteArray(4)
             var offset = 0
             while (offset < 4) {
+                cancellationSignal?.throwIfCanceled()
                 val n = source.read(magic, offset, 4 - offset)
                 if (n < 0) throw IOException("GGUF 文件头不完整。")
                 if (n > 0) offset += n
@@ -318,7 +350,19 @@ object LocalGgufModelImporter {
                 throw IOException("文件头不是 GGUF 格式。")
             FileOutputStream(target).use { output ->
                 output.write(magic)
-                source.copyTo(output, 1024 * 1024)
+                var copied = magic.size.toLong()
+                onProgress?.invoke(copied, expectedSize)
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    cancellationSignal?.throwIfCanceled()
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    output.write(buffer, 0, count)
+                    copied += count.toLong()
+                    onProgress?.invoke(copied, expectedSize)
+                }
+                cancellationSignal?.throwIfCanceled()
                 output.fd.sync()
             }
         }
