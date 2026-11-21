@@ -210,18 +210,8 @@ jobs:
               source = source.replace(old, new, 1)
           gradle.write_text(source, encoding="utf-8")
 
-          for relative, app_name in [
-              ("app/src/main/res/values-zh-rCN/strings.xml", "MNN Chat 模型诊断版"),
-              ("app/src/main/res/values/strings.xml", "MNN Chat - Conversion Diagnostics"),
-          ]:
-              path = root / relative
-              text = path.read_text(encoding="utf-8")
-              old = '<string name="app_name">MNN Chat</string>'
-              if text.count(old) != 1:
-                  raise SystemExit(f"Expected one app_name anchor in {relative}")
-              path.write_text(text.replace(old, f'<string name="app_name">{app_name}</string>', 1),
-                              encoding="utf-8")
-          print("Variant identity set to com.alibaba.mnnllm.android.localimport (install alongside stock app).")
+          print("Variant package set to com.alibaba.mnnllm.android.localimport (install alongside stock app); app label stays MNN Chat.")
+
           PY
 
       - name: Add Maven Central mirror fallback for CI
