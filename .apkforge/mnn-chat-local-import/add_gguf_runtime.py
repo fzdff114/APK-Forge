@@ -351,8 +351,11 @@ p.parent.mkdir(parents=True, exist_ok=True)
 p.write_text(importer)
 
 activity = r'''package com.alibaba.mnnllm.android.modelist
+import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.*
 import androidx.activity.OnBackPressedCallback
@@ -369,21 +372,33 @@ class GgufChatActivity : AppCompatActivity() {
     companion object { const val EXTRA_MODEL_PATH = "com.alibaba.mnnllm.android.EXTRA_GGUF_MODEL_PATH" }
     private lateinit var status: TextView
     private lateinit var transcript: TextView
+    private lateinit var transcriptScroll: ScrollView
     private lateinit var input: EditText
     private lateinit var send: Button
+    private lateinit var stop: Button
     private var engine: InferenceEngine? = null
     private var generation: Job? = null
     private var ready = false
     private var metadataSummary = ""
+    private var modelHeader = ""
+    private var historyFile: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val path = intent.getStringExtra(EXTRA_MODEL_PATH)
         if (path.isNullOrBlank() || !File(path).isFile) { finish(); return }
-        buildUi(File(path).name)
+        val modelFile = File(path)
+        historyFile = GgufChatHistoryStore.fileFor(filesDir, modelFile)
+        buildUi(modelFile.name)
         lifecycleScope.launch {
             try {
-                val modelFile = File(path)
+                val saved = withContext(Dispatchers.IO) {
+                    GgufChatHistoryStore.read(historyFile ?: return@withContext "")
+                }
+                if (saved.isNotBlank()) {
+                    transcript.text = saved
+                    scrollToBottom()
+                }
                 status.text = "正在校验 GGUF 元数据…"
                 val metadata = withContext(Dispatchers.IO) {
                     modelFile.inputStream().buffered().use { stream ->
@@ -414,23 +429,23 @@ class GgufChatActivity : AppCompatActivity() {
                 ready = true
                 status.text = "模型已加载，可以开始对话"
                 send.isEnabled = true
-                transcript.append(
-                    "模型已就绪：" + modelFile.name +
-                        "\n文件大小：" + formatSize(modelFile.length()) +
-                        "\nGGUF 版本：" + metadata.version +
-                        "\n架构：" + (metadata.architecture ?: "未知") +
-                        "\n张量：" + metadata.tensorCount +
-                        "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
-                        "\n\n"
-                )
+                modelHeader = "模型已就绪：" + modelFile.name +
+                    "\n文件大小：" + formatSize(modelFile.length()) +
+                    "\nGGUF 版本：" + metadata.version +
+                    "\n架构：" + (metadata.architecture ?: "未知") +
+                    "\n张量：" + metadata.tensorCount +
+                    "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
+                    "\n\n"
+                if (transcript.text.isNullOrEmpty()) transcript.append(modelHeader)
+                persistHistory()
+                scrollToBottom()
             } catch (e: Exception) {
                 status.text = "模型加载失败，详细原因见下方"
-                if (::transcript.isInitialized) {
-                    transcript.append(
-                        "模型加载失败\n" + metadataSummary + "\n异常： " +
-                            (e.message ?: e.javaClass.simpleName) + "\n\n"
-                    )
-                }
+                transcript.append(
+                    "模型加载失败\n" + metadataSummary + "\n异常： " +
+                        (e.message ?: e.javaClass.simpleName) + "\n\n"
+                )
+                persistHistory()
             }
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -438,11 +453,12 @@ class GgufChatActivity : AppCompatActivity() {
                 isEnabled = false
                 lifecycleScope.launch {
                     generation?.cancelAndJoin()
+                    persistHistory()
                     val current = engine
                     if (current != null) withContext(Dispatchers.IO) {
                         try {
-                            val s = current.state.value
-                            if (s is InferenceEngine.State.ModelReady || s is InferenceEngine.State.Error)
+                            val state = current.state.value
+                            if (state is InferenceEngine.State.ModelReady || state is InferenceEngine.State.Error)
                                 current.cleanUp()
                         } catch (_: Exception) {}
                     }
@@ -452,10 +468,25 @@ class GgufChatActivity : AppCompatActivity() {
         })
     }
 
+    override fun onStop() {
+        val target = historyFile
+        val snapshot = if (::transcript.isInitialized) transcript.text.toString() else ""
+        if (target != null && snapshot.isNotBlank()) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                runCatching { GgufChatHistoryStore.write(target, snapshot) }
+            }
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         generation?.cancel()
         try { engine?.destroy() } catch (_: Exception) {}
         engine = null
+        val target = historyFile
+        if (target != null && ::transcript.isInitialized) {
+            runCatching { GgufChatHistoryStore.write(target, transcript.text.toString()) }
+        }
         super.onDestroy()
     }
 
@@ -464,18 +495,62 @@ class GgufChatActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
-        root.addView(TextView(this).apply { text = modelName; textSize = 18f })
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(TextView(this).apply {
+            text = modelName
+            textSize = 17f
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(Button(this).apply {
+            text = "模型库"
+            setOnClickListener {
+                startActivity(Intent(this@GgufChatActivity, GgufModelLibraryActivity::class.java))
+            }
+        })
+        top.addView(Button(this).apply {
+            text = "清空记录"
+            setOnClickListener { confirmClearHistory() }
+        })
+        root.addView(top)
         status = TextView(this).apply { text = "正在初始化 GGUF 推理引擎…"; textSize = 13f }
         root.addView(status)
-        transcript = TextView(this).apply { textSize = 16f; setTextIsSelectable(true); setPadding(dp(8), dp(8), dp(8), dp(8)) }
-        root.addView(ScrollView(this).apply { addView(transcript) }, LinearLayout.LayoutParams(-1, 0, 1f))
-        input = EditText(this).apply { hint = "输入消息"; minLines = 1; maxLines = 4; imeOptions = EditorInfo.IME_ACTION_SEND }
-        send = Button(this).apply { text = "发送"; isEnabled = false; setOnClickListener { sendPrompt() } }
+        transcript = TextView(this).apply {
+            textSize = 16f
+            setTextIsSelectable(true)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        transcriptScroll = ScrollView(this).apply { addView(transcript) }
+        root.addView(transcriptScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        input = EditText(this).apply {
+            hint = "输入消息"
+            minLines = 1
+            maxLines = 4
+            imeOptions = EditorInfo.IME_ACTION_SEND
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_SEND) {
+                    sendPrompt()
+                    true
+                } else false
+            }
+        }
+        send = Button(this).apply {
+            text = "发送"
+            isEnabled = false
+            setOnClickListener { sendPrompt() }
+        }
+        stop = Button(this).apply {
+            text = "停止"
+            isEnabled = false
+            setOnClickListener { generation?.cancel() }
+        }
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(input, LinearLayout.LayoutParams(0, -2, 1f))
             addView(send)
+            addView(stop)
         })
         setContentView(root)
     }
@@ -486,22 +561,66 @@ class GgufChatActivity : AppCompatActivity() {
         if (message.isEmpty() || active == null || !ready || generation?.isActive == true) return
         input.text?.clear()
         transcript.append("你：" + message + "\n助手：")
+        scrollToBottom()
         send.isEnabled = false
+        stop.isEnabled = true
         generation = lifecycleScope.launch(Dispatchers.Default) {
             try {
                 active.sendUserPrompt(message, 512).collect { token ->
-                    withContext(Dispatchers.Main.immediate) { transcript.append(token) }
+                    withContext(Dispatchers.Main.immediate) {
+                        transcript.append(token)
+                        scrollToBottom()
+                    }
                 }
                 withContext(Dispatchers.Main.immediate) { transcript.append("\n\n") }
             } catch (e: CancellationException) {
+                withContext(Dispatchers.Main.immediate) { transcript.append("\n\n[已停止生成]\n\n") }
                 throw e
             } catch (e: Exception) {
                 withContext(Dispatchers.Main.immediate) {
                     status.text = "生成失败：" + (e.message ?: e.javaClass.simpleName)
                 }
             } finally {
-                withContext(NonCancellable + Dispatchers.Main.immediate) { send.isEnabled = ready }
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    send.isEnabled = ready
+                    stop.isEnabled = false
+                }
+                withContext(NonCancellable) { persistHistory() }
             }
+        }
+    }
+
+    private suspend fun persistHistory() {
+        val target = historyFile ?: return
+        val content = withContext(Dispatchers.Main.immediate) {
+            if (::transcript.isInitialized) transcript.text.toString() else ""
+        }
+        withContext(Dispatchers.IO) {
+            GgufChatHistoryStore.write(target, content)
+        }
+    }
+
+    private fun confirmClearHistory() {
+        AlertDialog.Builder(this)
+            .setTitle("清空聊天记录")
+            .setMessage("只清除当前模型的对话记录，不会删除模型文件。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("清空") { _, _ ->
+                lifecycleScope.launch {
+                    val target = historyFile
+                    if (target != null) withContext(Dispatchers.IO) {
+                        GgufChatHistoryStore.clear(target)
+                    }
+                    transcript.text = modelHeader.ifBlank { "新对话\n" }
+                    persistHistory()
+                }
+            }
+            .show()
+    }
+
+    private fun scrollToBottom() {
+        if (::transcriptScroll.isInitialized) {
+            transcriptScroll.post { transcriptScroll.fullScroll(View.FOCUS_DOWN) }
         }
     }
 
@@ -519,6 +638,9 @@ class GgufChatActivity : AppCompatActivity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
 '''
+p = java / "com/alibaba/mnnllm/android/modelist/GgufChatActivity.kt"
+p.write_text(activity)
+
 p = java / "com/alibaba/mnnllm/android/modelist/GgufChatActivity.kt"
 p.write_text(activity)
 
