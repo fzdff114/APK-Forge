@@ -37,25 +37,8 @@ jobs:
           git -C "$SRC" fetch --depth 1 origin 46eb1742db6d2caec1bfa848c5702b1bdcc815e5
           git -C "$SRC" checkout --detach FETCH_HEAD
           test "$(git -C "$SRC" rev-parse HEAD)" = "46eb1742db6d2caec1bfa848c5702b1bdcc815e5"
-          # This pinned revision nests llama-cli under the server-tools CMake gate.
-          # Add only the standalone CLI target so the smoke test does not need the server/UI.
-          python3 - "$SRC/tools/CMakeLists.txt" <<'PY'
-          from pathlib import Path
-          import sys
 
-          path = Path(sys.argv[1])
-          source = path.read_text(encoding="utf-8")
-          # Move llama-cli out of the LLAMA_BUILD_SERVER gate without enabling UI/server targets.
-          remove_line = "        add_subdirectory(cli)" + chr(10)
-          insert_after = "    add_subdirectory(perplexity)" + chr(10)
-          if source.count(remove_line) != 1 or source.count(insert_after) != 1:
-              raise SystemExit("Could not relocate the pinned llama-cli CMake entry")
-          source = source.replace(remove_line, "", 1)
-          source = source.replace(insert_after, insert_after + "    add_subdirectory(cli)" + chr(10), 1)
-          path.write_text(source, encoding="utf-8")
-          PY
-
-      - name: Build host llama.cpp CLI
+      - name: Build host llama.cpp completion tool
         shell: bash
         run: |
           set -euo pipefail
@@ -71,8 +54,8 @@ jobs:
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_APP=OFF \
             -DLLAMA_CURL=OFF
-          cmake --build "$BUILD" --config Release --parallel 2 --target llama-cli
-          test -x "$BUILD/bin/llama-cli"
+          cmake --build "$BUILD" --config Release --parallel 2 --target llama-completion
+          test -x "$BUILD/bin/llama-completion"
 
       - name: Download and verify small Qwen2 GGUF from ModelScope
         shell: bash
@@ -99,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CLI="$RUNNER_TEMP/llama-host-build/bin/llama-cli"
+          CLI="$RUNNER_TEMP/llama-host-build/bin/llama-completion"
           OUTPUT="$RUNNER_TEMP/qwen-gguf-inference.log"
           timeout 240 "$CLI" \
             --model "$MODEL_FILE" \
