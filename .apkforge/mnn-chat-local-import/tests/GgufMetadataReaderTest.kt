@@ -26,6 +26,28 @@ class GgufMetadataReaderTest {
     }
 
     @Test
+    fun skipsLargeUnneededScalarStringsAndStringArrayEntries() {
+        // GGUF token metadata may contain long individual strings. The reader only needs
+        // architecture/name/block count, so these values must be streamed past, not decoded.
+        val oversized = 4 * 1024 * 1024 + 1
+        val bytes = ggufFixture(
+            types = listOf(2, 14),
+            includeTokenArray = true,
+            longArrayEntryBytes = oversized,
+            longScalarStringBytes = oversized
+        )
+
+        val result = GgufMetadataReader.inspect(bytes.inputStream())
+
+        assertTrue("Long unrelated metadata must not stop header inspection: $result",
+            result is GgufMetadataReader.Result.Success)
+        val metadata = (result as GgufMetadataReader.Result.Success).metadata
+        assertEquals("llama", metadata.architecture)
+        assertEquals(2L, metadata.tensorCount)
+        assertEquals(setOf("Q4_0", "Q6_K"), metadata.tensorTypes)
+    }
+
+    @Test
     fun reportsTensorTypesNotHandledByOfficialMnnGgufWeightMapper() {
         val result = GgufMetadataReader.inspect(ggufFixture(listOf(39), includeTokenArray = false).inputStream())
 
@@ -78,12 +100,17 @@ class GgufMetadataReaderTest {
         assertTrue(result is GgufMetadataReader.Result.Failure)
     }
 
-    private fun ggufFixture(types: List<Int>, includeTokenArray: Boolean): ByteArray {
+    private fun ggufFixture(
+        types: List<Int>,
+        includeTokenArray: Boolean,
+        longArrayEntryBytes: Int = 0,
+        longScalarStringBytes: Int = 0
+    ): ByteArray {
         val output = ByteArrayOutputStream()
         output.write(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
         writeU32(output, 3)
         writeU64(output, types.size.toLong())
-        writeU64(output, if (includeTokenArray) 4 else 3)
+        writeU64(output, (if (includeTokenArray) 4 else 3) + if (longScalarStringBytes > 0) 1 else 0)
 
         writeString(output, "general.architecture")
         writeU32(output, 8)
@@ -101,9 +128,18 @@ class GgufMetadataReaderTest {
             writeString(output, "tokenizer.ggml.tokens")
             writeU32(output, 9)
             writeU32(output, 8)
-            writeU64(output, 2)
+            writeU64(output, if (longArrayEntryBytes > 0) 3 else 2)
             writeString(output, "<s>")
             writeString(output, "</s>")
+            if (longArrayEntryBytes > 0) {
+                writeString(output, "x".repeat(longArrayEntryBytes))
+            }
+        }
+
+        if (longScalarStringBytes > 0) {
+            writeString(output, "tokenizer.chat_template")
+            writeU32(output, 8)
+            writeString(output, "y".repeat(longScalarStringBytes))
         }
 
         types.forEachIndexed { index, type ->
