@@ -80,7 +80,7 @@ object VerifiedDeepSeekDownloader {
                 }
             }
 
-            val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+            val actualHash = digest.digest().joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
             if (copied != EXPECTED_SIZE || actualHash != EXPECTED_SHA256) {
                 throw IOException(
                     "下载文件完整性校验失败：大小 $copied / $EXPECTED_SIZE 字节，" +
