@@ -214,6 +214,21 @@ if ai_chat.count(old_prompt_limit) != 2:
     raise SystemExit("Expected both system/user prompt context checks")
 ai_chat = ai_chat.replace(old_prompt_limit, "const int max_batch_size = g_context_size - OVERFLOW_HEADROOM")
 
+old_user_size = """    const int user_prompt_size = (int) user_tokens.size();
+    const int max_batch_size = g_context_size - OVERFLOW_HEADROOM;
+    if (user_prompt_size > max_batch_size) {
+        const int skipped_tokens = user_prompt_size - max_batch_size;
+        user_tokens.resize(max_batch_size);"""
+new_user_size = """    int user_prompt_size = (int) user_tokens.size();
+    const int max_batch_size = g_context_size - OVERFLOW_HEADROOM;
+    if (user_prompt_size > max_batch_size) {
+        const int skipped_tokens = user_prompt_size - max_batch_size;
+        user_tokens.resize(max_batch_size);
+        user_prompt_size = (int) user_tokens.size();"""
+if ai_chat.count(old_user_size) != 1:
+    raise SystemExit("Could not correct token accounting after prompt truncation")
+ai_chat = ai_chat.replace(old_user_size, new_user_size, 1)
+
 # Keep requested generation length exact; the upstream code added prompt tokens twice.
 old_stop = """    current_position += user_prompt_size;
     stop_generation_position = current_position + user_prompt_size + n_predict;"""
