@@ -346,6 +346,12 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt"),
         Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt":
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufChatHistoryStore.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufChatHistoryStore.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt"),
         Path(__file__).parent / "tests/LocalModelConversionManagerTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManagerTest.kt"),
         Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
@@ -354,6 +360,10 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporterTest.kt"),
         Path(__file__).parent / "tests/GgufMetadataReaderTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReaderTest.kt"),
+        Path(__file__).parent / "tests/LocalGgufModelLibraryTest.kt":
+            Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibraryTest.kt"),
+        Path(__file__).parent / "tests/GgufChatHistoryStoreTest.kt":
+            Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/GgufChatHistoryStoreTest.kt"),
     }
     for source_path, target_path in extra_sources.items():
         if not source_path.is_file():
