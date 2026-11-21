@@ -1,4 +1,4 @@
-name: Build MNN Chat 0.9.5 with verified DeepSeek import and original chat UI
+name: Build MNN Chat 0.9.6 with GGUF on original model list
 
 on:
   push:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.9.5 GGUF runtime (arm64-v8a)
+    name: Build MNN Chat 0.9.6 GGUF runtime (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -181,9 +181,9 @@ jobs:
           source = gradle.read_text(encoding="utf-8")
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
-               'applicationId "com.alibaba.mnnllm.android.localimport095"'),
-              ("versionCode 830", "versionCode 843"),
-              ('versionName "0.8.3"', 'versionName "0.9.5"'),
+               'applicationId "com.alibaba.mnnllm.android.localimport096"'),
+              ("versionCode 830", "versionCode 844"),
+              ('versionName "0.8.3"', 'versionName "0.9.6"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
@@ -258,7 +258,7 @@ jobs:
           test ! -e "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt"
           test ! -e "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufChatActivity.kt"
           grep -n 'local-gguf/' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/ModelListManager.kt"
-          grep -n 'deleteGgufModel' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/ModelItemHolder.kt"
+          grep -n 'LocalImportedModelDeleter' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/ModelItemHolder.kt"
           grep -q 'ggufModelPath' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/chat/ChatRouter.kt"
       - name: Add Maven Central mirror fallback for CI
         shell: bash
@@ -443,11 +443,11 @@ jobs:
             assembleStandardDebug --stacktrace
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
-          OUTPUT_APK="$RUNNER_TEMP/MNN_Chat_0.9.5_SideBySide_arm64.apk"
+          OUTPUT_APK="$RUNNER_TEMP/MNN_Chat_0.9.6_SideBySide_arm64.apk"
           cp "$APK" "$OUTPUT_APK"
           test -s "$OUTPUT_APK"
           sha256sum "$OUTPUT_APK"
-          echo "### MNN Chat 0.9.5 with verified DeepSeek import and original chat UI" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.9.6 with GGUF on original model list" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source-matched libMNN SHA-256: $MNN_RUNTIME_SHA256" >> "$GITHUB_STEP_SUMMARY"
           echo "- MNN source commit: $MNN_SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
           echo "- llama.cpp source commit: $LLAMA_CPP_SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
@@ -459,7 +459,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.9.5-gguf-runtime-arm64
+          name: mnn-chat-0.9.6-gguf-runtime-arm64
           path: ${{ runner.temp }}/MNN_Chat_0.9.5_SideBySide_arm64.apk
           if-no-files-found: error
           retention-days: 14
