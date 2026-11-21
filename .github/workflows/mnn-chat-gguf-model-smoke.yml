@@ -37,6 +37,25 @@ jobs:
           git -C "$SRC" fetch --depth 1 origin 46eb1742db6d2caec1bfa848c5702b1bdcc815e5
           git -C "$SRC" checkout --detach FETCH_HEAD
           test "$(git -C "$SRC" rev-parse HEAD)" = "46eb1742db6d2caec1bfa848c5702b1bdcc815e5"
+          # This pinned revision nests llama-cli under the server-tools CMake gate.
+          # Add only the standalone CLI target so the smoke test does not need the server/UI.
+          python3 - "$SRC/tools/CMakeLists.txt" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          old = """    if (LLAMA_BUILD_SERVER)
+                  # the chat app lives in ui/apps/chat, outside tools/
+                  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ui/apps/chat ${CMAKE_BINARY_DIR}/ui/apps/chat)
+                  add_subdirectory(cli)
+                  add_subdirectory(server)
+              endif()"""
+          new = """    add_subdirectory(cli)"""
+          if source.count(old) != 1:
+              raise SystemExit("Could not isolate the pinned llama-cli CMake target")
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
 
       - name: Build host llama.cpp CLI
         shell: bash
@@ -49,8 +68,10 @@ jobs:
             -DGGML_NATIVE=OFF \
             -DGGML_OPENMP=ON \
             -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=ON \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TOOLS=ON \
             -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_BUILD_APP=OFF \
             -DLLAMA_CURL=OFF
           cmake --build "$BUILD" --config Release --parallel 2 --target llama-cli
           test -x "$BUILD/bin/llama-cli"
