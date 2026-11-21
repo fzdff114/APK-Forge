@@ -292,6 +292,13 @@ def main() -> None:
                 app:label_text="@string/add_local_model_file"
                 app:fab_icon="@drawable/ic_model"
                 android:onClick="addLocalModelFile"/>
+            <com.nambimobile.widgets.efab.FabOption
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:fab_orientation="portrait"
+                app:label_text="@string/open_gguf_model_library"
+                app:fab_icon="@drawable/ic_model"
+                android:onClick="openGgufModelLibrary"/>
 '''
     contents["main_layout"] = replace_once(contents["main_layout"], fab_anchor, fab_addition, "main-page FAB option")
 
@@ -302,6 +309,7 @@ def main() -> None:
     <string name="local_model_import_success">本地模型已导入：%1$s</string>
     <string name="local_model_import_failed">导入失败：%1$s</string>
     <string name="local_model_invalid_folder">请选择根目录直接包含 config.json 的 MNN 模型文件夹。</string>
+    <string name="open_gguf_model_library">管理已导入的 GGUF 模型</string>
 '''
     contents["strings_zh"] = replace_once(
         contents["strings_zh"], "</resources>", zh_entries + "</resources>", "Chinese import strings"
@@ -314,6 +322,7 @@ def main() -> None:
     <string name="local_model_import_success">Model imported: %1$s</string>
     <string name="local_model_import_failed">Import failed: %1$s</string>
     <string name="local_model_invalid_folder">Select an MNN model folder with config.json directly in its root.</string>
+    <string name="open_gguf_model_library">Manage Imported GGUF Models</string>
 '''
     contents["strings_en"] = replace_once(
         contents["strings_en"], "</resources>", en_entries + "</resources>", "English import strings"
@@ -333,6 +342,10 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManager.kt"),
         Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReader.kt":
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReader.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt"),
         Path(__file__).parent / "tests/LocalModelConversionManagerTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManagerTest.kt"),
         Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
