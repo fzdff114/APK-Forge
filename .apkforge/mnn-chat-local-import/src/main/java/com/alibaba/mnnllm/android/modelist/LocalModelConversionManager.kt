@@ -9,6 +9,8 @@ object LocalModelConversionManager {
         MISSING_TEMPLATE,
         MISSING_NATIVE_BACKEND,
         UNSUPPORTED_SOURCE,
+        UNSUPPORTED_ARCHITECTURE,
+        UNSUPPORTED_QUANTIZATION,
         SOURCE_INCOMPLETE,
         SOURCE_INVALID
     }
@@ -38,6 +40,25 @@ object LocalModelConversionManager {
         }
         if (source.state == LocalModelFormatInspector.State.RECOGNIZED_INCOMPLETE) {
             return ConversionReadiness(Status.SOURCE_INCOMPLETE, false, source.details)
+        }
+        if (source.unsupportedTensorTypes.isNotEmpty()) {
+            return ConversionReadiness(
+                Status.UNSUPPORTED_QUANTIZATION,
+                false,
+                "当前 MNN GGUF 权重映射不支持：${source.unsupportedTensorTypes.sorted().joinToString()}。"
+            )
+        }
+        if (source.state == LocalModelFormatInspector.State.RECOGNIZED_NOT_CONVERTIBLE_HERE) {
+            return ConversionReadiness(Status.UNSUPPORTED_SOURCE, false, source.details)
+        }
+        if (template?.architecture != null && source.architecture != null &&
+            !template.architecture.equals(source.architecture, ignoreCase = true)
+        ) {
+            return ConversionReadiness(
+                Status.UNSUPPORTED_ARCHITECTURE,
+                false,
+                "模型架构不匹配：源模型为 ${source.architecture}，模板为 ${template.architecture}。请使用相同架构的 MNN 模型模板。"
+            )
         }
         if (template == null || !template.valid) {
             val reason = template?.details ?: "尚未选择匹配的 MNN 模型结构模板。"
