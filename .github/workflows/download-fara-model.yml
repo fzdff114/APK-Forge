@@ -1,0 +1,82 @@
+name: Download Fara1.5-4B GGUF package
+
+on:
+  push:
+    branches:
+      - mnn-chat-gguf-feature-improvements
+    paths:
+      - .github/workflows/download-fara-model.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  download-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: Prepare package directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p Fara1.5-4B_IQ2_M
+
+      - name: Download Fara1.5-4B IQ2_M and matching vision projector
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://huggingface.co/bartowski/Fara1.5-4B-GGUF/resolve/main"
+          MODEL="Fara1.5-4B-IQ2_M.gguf"
+          MMPROJ="mmproj-Fara1.5-4B-f16.gguf"
+
+          curl --fail --location --retry 10 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 7200 \
+            --output "Fara1.5-4B_IQ2_M/$MODEL" "$BASE/$MODEL?download=true"
+
+          curl --fail --location --retry 10 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 3600 \
+            --output "Fara1.5-4B_IQ2_M/$MMPROJ" "$BASE/$MMPROJ?download=true"
+
+          cd Fara1.5-4B_IQ2_M
+          printf '%s  %s\n' \
+            'f26c5537c01a8f8abf9b1fae558382b7631faba5dcaf93b016d0cdb3562c6970' "$MODEL" \
+            '373320845fb5539dd55a66d3faafcd8f123e83a7318334d557a04d604f5ef84d' "$MMPROJ" \
+            > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+          test "$(stat -c '%s' "$MODEL")" -gt 1700000000
+          test "$(stat -c '%s' "$MMPROJ")" -gt 600000000
+          cd ..
+
+          cat > Fara1.5-4B_IQ2_M/README_中文.txt <<'EOF'
+          Fara1.5-4B（4B 参数）GGUF 完整视觉模型包
+          量化：IQ2_M（尽量减小体积）
+          主模型：Fara1.5-4B-IQ2_M.gguf
+          视觉投影：mmproj-Fara1.5-4B-f16.gguf
+
+          本包包含模型主体和匹配的视觉投影文件。两者需放在同一目录，并由支持该架构及多模态输入的 llama.cpp / Fara 官方运行环境加载。
+
+          重要兼容性说明：
+          MNN Chat 0.9.5 目前的本地 GGUF 页面尚未支持 mmproj 多模态输入，因此不能在现版 MNN Chat 中完整运行 Fara1.5 的截图理解/视觉操作功能。这是先保存的完整模型文件包，不代表现版 APK 已兼容。
+
+          推荐运行入口：
+          Microsoft 官方项目：https://github.com/microsoft/fara
+          Microsoft 官方模型卡：https://huggingface.co/microsoft/Fara1.5-4B
+          GGUF 文件来源：https://huggingface.co/bartowski/Fara1.5-4B-GGUF
+
+          许可：MIT（以模型卡为准）
+          SHA256SUMS 中列有两个 GGUF 文件的校验值。
+          EOF
+
+          echo "Model and projector downloads verified." >> "$GITHUB_STEP_SUMMARY"
+          du -h Fara1.5-4B_IQ2_M/* >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete model package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fara1.5-4B-GGUF-IQ2_M-with-mmproj
+          path: Fara1.5-4B_IQ2_M/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
