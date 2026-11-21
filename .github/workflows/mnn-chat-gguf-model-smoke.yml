@@ -106,3 +106,53 @@ jobs:
           echo "- Quantization: Q4_K_M (491,400,032 bytes)" >> "$GITHUB_STEP_SUMMARY"
           echo "- llama.cpp commit: 46eb1742db6d2caec1bfa848c5702b1bdcc815e5" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-256: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download and verify the user's DeepSeek Qwen2 1.5B Q2_K GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL="$RUNNER_TEMP/DeepSeek-R1-Distill-Qwen-1.5B-Q2_K.gguf"
+          URL="https://modelscope.cn/models/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/master/DeepSeek-R1-Distill-Qwen-1.5B-Q2_K.gguf"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --connect-timeout 30 --max-time 1800 \
+            "$URL" --output "$MODEL"
+          test -s "$MODEL"
+          ACTUAL_SIZE="$(stat -c '%s' "$MODEL")"
+          EXPECTED_SIZE="752880224"
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
+            echo "::error::DeepSeek Q2_K size mismatch: expected $EXPECTED_SIZE, got $ACTUAL_SIZE"
+            exit 1
+          fi
+          EXPECTED_SHA="902a0f3910078db0fdb1cf58686d36160794b96e4698eae577fb18b35f2b0d87"
+          echo "$EXPECTED_SHA  $MODEL" | sha256sum --check
+          echo "DEEPSEEK_MODEL_FILE=$MODEL" >> "$GITHUB_ENV"
+          echo "DEEPSEEK_EXPECTED_SHA=$EXPECTED_SHA" >> "$GITHUB_ENV"
+
+      - name: Load the matching DeepSeek Q2_K GGUF and generate a short answer
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLI="$RUNNER_TEMP/llama-host-build/bin/llama-completion"
+          OUTPUT="$RUNNER_TEMP/deepseek-q2k-inference.log"
+          timeout 480 "$CLI" \
+            --model "$DEEPSEEK_MODEL_FILE" \
+            --prompt "请用中文简短回答：2+2等于几？" \
+            --n-predict 48 \
+            --ctx-size 2048 \
+            --n-gpu-layers 0 \
+            --single-turn \
+            --simple-io \
+            --no-display-prompt \
+            --no-warmup \
+            > "$OUTPUT" 2>&1
+          if ! grep -Eq "2\\+2等于4|2\\+2 = 4|4" "$OUTPUT"; then
+            echo "::error::DeepSeek Q2_K loaded but the short inference output did not contain the expected answer."
+            tail -n 80 "$OUTPUT"
+            exit 1
+          fi
+          tail -n 50 "$OUTPUT"
+          echo "## DeepSeek-R1-Distill-Qwen-1.5B Q2_K GGUF smoke test passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Model: DeepSeek-R1-Distill-Qwen-1.5B-GGUF" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Quantization: Q2_K (752,880,224 bytes)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- llama.cpp commit: 46eb1742db6d2caec1bfa848c5702b1bdcc815e5" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-256: $DEEPSEEK_EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
