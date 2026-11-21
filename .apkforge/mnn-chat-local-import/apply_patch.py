@@ -38,6 +38,8 @@ def main() -> None:
         "import android.content.Intent\n"
         "import android.app.ProgressDialog\n"
         "import android.net.Uri\n"
+        "import android.os.CancellationSignal\n"
+        "import android.os.OperationCanceledException\n"
         "import android.provider.OpenableColumns\n"
         "import androidx.activity.result.contract.ActivityResultContracts\n"
         "import androidx.lifecycle.lifecycleScope\n",
