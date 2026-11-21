@@ -699,16 +699,32 @@ for line in [
 a = main.index("    private fun importLocalModelFromUri(treeUri: Uri) {")
 b = main.index("    /** Opens the system file picker.", a)
 main = main[:a] + r'''    private fun importLocalModelFromUri(treeUri: Uri) {
+        val cancellationSignal = CancellationSignal()
         val dialog = ProgressDialog(this).apply {
             setTitle(R.string.local_model_import_title)
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = 100
+            progress = 0
+            isIndeterminate = true
             setMessage(getString(R.string.local_model_import_progress))
-            setCancelable(false)
+            setCancelable(true)
+            setCanceledOnTouchOutside(false)
+            setOnCancelListener { cancellationSignal.cancel() }
             show()
         }
         lifecycleScope.launch {
             try {
                 val gguf = withContext(Dispatchers.IO) {
-                    LocalGgufModelImporter.copyFromTree(this@MainActivity, treeUri)
+                    LocalGgufModelImporter.copyFromTree(this@MainActivity, treeUri, cancellationSignal) { copied, total ->
+                        runOnUiThread {
+                            if (dialog.isShowing) {
+                                dialog.isIndeterminate = total <= 0L
+                                if (total > 0L) dialog.progress = ((copied.coerceAtMost(total) * 100L) / total).toInt()
+                                dialog.setMessage("已复制 " + (copied / 1048576L) + " / " +
+                                    (if (total > 0L) total / 1048576L else 0L) + " MB")
+                            }
+                        }
+                    }
                 }
                 if (gguf != null) {
                     startActivity(Intent(this@MainActivity, GgufChatActivity::class.java)
@@ -722,11 +738,13 @@ main = main[:a] + r'''    private fun importLocalModelFromUri(treeUri: Uri) {
                 ModelListManager.notifyModelListMayChange(ModelListManager.ChangeReason.MANUAL_REFRESH)
                 Toast.makeText(this@MainActivity,
                     getString(R.string.local_model_import_success, imported.name), Toast.LENGTH_LONG).show()
+            } catch (_: OperationCanceledException) {
+                Toast.makeText(this@MainActivity, "已取消 GGUF 导入，未保留不完整文件。", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to import local model folder", e)
                 Toast.makeText(this@MainActivity,
                     getString(R.string.local_model_import_failed, e.message ?: "Unknown error"), Toast.LENGTH_LONG).show()
-            } finally { dialog.dismiss() }
+            } finally { if (dialog.isShowing) dialog.dismiss() }
         }
     }
 
@@ -737,24 +755,42 @@ b = main.index("    fun runModel(", a)
 main = main[:a] + r'''    private fun importLocalModelFile(uri: Uri) {
         val displayName = queryLocalModelDisplayName(uri)
         if (displayName.endsWith(".gguf", ignoreCase = true)) {
+            val cancellationSignal = CancellationSignal()
             val dialog = ProgressDialog(this).apply {
                 setTitle(R.string.local_model_import_title)
+                setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                max = 100
+                progress = 0
+                isIndeterminate = true
                 setMessage(getString(R.string.local_model_import_progress))
-                setCancelable(false)
+                setCancelable(true)
+                setCanceledOnTouchOutside(false)
+                setOnCancelListener { cancellationSignal.cancel() }
                 show()
             }
             lifecycleScope.launch {
                 try {
                     val model = withContext(Dispatchers.IO) {
-                        LocalGgufModelImporter.copyFromUri(this@MainActivity, uri, displayName)
+                        LocalGgufModelImporter.copyFromUri(this@MainActivity, uri, displayName, cancellationSignal) { copied, total ->
+                            runOnUiThread {
+                                if (dialog.isShowing) {
+                                    dialog.isIndeterminate = total <= 0L
+                                    if (total > 0L) dialog.progress = ((copied.coerceAtMost(total) * 100L) / total).toInt()
+                                    dialog.setMessage("已复制 " + (copied / 1048576L) + " / " +
+                                        (if (total > 0L) total / 1048576L else 0L) + " MB")
+                                }
+                            }
+                        }
                     }
                     startActivity(Intent(this@MainActivity, GgufChatActivity::class.java)
                         .putExtra(GgufChatActivity.EXTRA_MODEL_PATH, model.absolutePath))
+                } catch (_: OperationCanceledException) {
+                    Toast.makeText(this@MainActivity, "已取消 GGUF 导入，未保留不完整文件。", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Log.e(TAG, "GGUF import failed", e)
                     Toast.makeText(this@MainActivity,
                         "GGUF 导入失败：" + (e.message ?: "未知错误"), Toast.LENGTH_LONG).show()
-                } finally { dialog.dismiss() }
+                } finally { if (dialog.isShowing) dialog.dismiss() }
             }
             return
         }
