@@ -27,7 +27,7 @@ class GgufMetadataReaderTest {
 
     @Test
     fun reportsTensorTypesNotHandledByOfficialMnnGgufWeightMapper() {
-        val result = GgufMetadataReader.inspect(ggufFixture(listOf(39)).inputStream())
+        val result = GgufMetadataReader.inspect(ggufFixture(listOf(39), includeTokenArray = false).inputStream())
 
         assertTrue(result is GgufMetadataReader.Result.Success)
         val metadata = (result as GgufMetadataReader.Result.Success).metadata
