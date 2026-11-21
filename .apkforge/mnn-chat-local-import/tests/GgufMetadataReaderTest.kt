@@ -31,7 +31,7 @@ class GgufMetadataReaderTest {
 
         assertTrue(result is GgufMetadataReader.Result.Success)
         val metadata = (result as GgufMetadataReader.Result.Success).metadata
-        assertEquals(setOf("GGML_TYPE_39"), metadata.unsupportedTensorTypes)
+        assertEquals(setOf("MXFP4"), metadata.unsupportedTensorTypes)
     }
 
     @Test
