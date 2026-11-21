@@ -122,6 +122,106 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_lastLoadError(JNIEnv *env, jobj
 if ai_chat.count(old_model_load) != 1:
     raise SystemExit("Could not locate native model load return anchor")
 ai_chat = ai_chat.replace(old_model_load, new_model_load, 1)
+
+# Adapt context and batch allocation to the model's trained context and available device RAM.
+context_constants = """constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;
+constexpr int   OVERFLOW_HEADROOM       = 4;
+constexpr int   BATCH_SIZE              = 512;
+constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;"""
+context_constants_replacement = context_constants + "\nstatic int g_context_size = DEFAULT_CONTEXT_SIZE;"
+if ai_chat.count(context_constants) != 1:
+    raise SystemExit("Could not locate llama.cpp context constants")
+ai_chat = ai_chat.replace(context_constants, context_constants_replacement, 1)
+
+old_context_batch = """    ctx_params.n_ctx = n_ctx;
+    ctx_params.n_batch = BATCH_SIZE;
+    ctx_params.n_ubatch = BATCH_SIZE;
+    ctx_params.n_threads = n_threads;"""
+new_context_batch = """    const int batch_size = std::max(1, std::min(BATCH_SIZE, n_ctx / 8));
+    ctx_params.n_ctx = n_ctx;
+    ctx_params.n_batch = batch_size;
+    ctx_params.n_ubatch = batch_size;
+    ctx_params.n_threads = n_threads;"""
+if ai_chat.count(old_context_batch) != 1:
+    raise SystemExit("Could not locate llama.cpp batch parameters")
+ai_chat = ai_chat.replace(old_context_batch, new_context_batch, 1)
+
+old_prepare = """JNIEXPORT jint JNICALL
+Java_com_arm_aichat_internal_InferenceEngineImpl_prepare(JNIEnv * /*env*/, jobject /*unused*/) {
+    auto *context = init_context(g_model);
+    if (!context) { return 1; }
+    g_context = context;
+    g_batch = common_batch(context);
+    g_chat_templates = common_chat_templates_init(g_model, "");
+    g_sampler = new_sampler(DEFAULT_SAMPLER_TEMP);
+    return 0;
+}"""
+new_prepare = """JNIEXPORT jint JNICALL
+Java_com_arm_aichat_internal_InferenceEngineImpl_prepare(JNIEnv * /*env*/, jobject /*unused*/) {
+    if (!g_model) {
+        LOGe("Cannot prepare inference context: model is null.");
+        return 1;
+    }
+
+    const int trained_context = (int) llama_model_n_ctx_train(g_model);
+    int candidate_context = trained_context > 0
+        ? std::min(DEFAULT_CONTEXT_SIZE, trained_context)
+        : DEFAULT_CONTEXT_SIZE;
+
+    // Prefer 8K context, retry smaller contexts if the Android device cannot allocate enough RAM.
+    // This is a runtime-memory fallback; there is no model-file-size restriction here.
+    while (candidate_context > 0) {
+        g_context_size = candidate_context;
+        LOGi("Trying GGUF context size: %d", candidate_context);
+        auto *context = init_context(g_model, candidate_context);
+        if (context) {
+            g_context = context;
+            g_batch = common_batch(context);
+            g_chat_templates = common_chat_templates_init(g_model, "");
+            g_sampler = new_sampler(DEFAULT_SAMPLER_TEMP);
+            LOGi("GGUF context initialized: %d tokens", g_context_size);
+            return 0;
+        }
+        if (candidate_context <= 512) break;
+        candidate_context = std::max(512, candidate_context / 2);
+    }
+
+    LOGe("Unable to initialize GGUF inference context at available context sizes.");
+    return 1;
+}"""
+if ai_chat.count(old_prepare) != 1:
+    raise SystemExit("Could not locate llama.cpp prepare function")
+ai_chat = ai_chat.replace(old_prepare, new_prepare, 1)
+
+old_decode = """    LOGd("%s: Decode %d tokens starting at position %d", __func__, (int) tokens.size(), start_pos);
+    for (int i = 0; i < (int) tokens.size(); i += BATCH_SIZE) {
+        const int cur_batch_size = std::min((int) tokens.size() - i, BATCH_SIZE);"""
+new_decode = """    LOGd("%s: Decode %d tokens starting at position %d", __func__, (int) tokens.size(), start_pos);
+    const int batch_size = std::max(1, std::min(BATCH_SIZE, g_context_size / 8));
+    for (int i = 0; i < (int) tokens.size(); i += batch_size) {
+        const int cur_batch_size = std::min((int) tokens.size() - i, batch_size);"""
+if ai_chat.count(old_decode) != 1:
+    raise SystemExit("Could not locate llama.cpp decode loop")
+ai_chat = ai_chat.replace(old_decode, new_decode, 1)
+
+old_overflow = "start_pos + i + cur_batch_size >= DEFAULT_CONTEXT_SIZE - OVERFLOW_HEADROOM"
+if ai_chat.count(old_overflow) != 1:
+    raise SystemExit("Could not locate llama.cpp context overflow check")
+ai_chat = ai_chat.replace(old_overflow, "start_pos + i + cur_batch_size >= g_context_size - OVERFLOW_HEADROOM", 1)
+
+old_prompt_limit = "const int max_batch_size = DEFAULT_CONTEXT_SIZE - OVERFLOW_HEADROOM;"
+if ai_chat.count(old_prompt_limit) != 2:
+    raise SystemExit("Expected both system/user prompt context checks")
+ai_chat = ai_chat.replace(old_prompt_limit, "const int max_batch_size = g_context_size - OVERFLOW_HEADROOM")
+
+# Keep requested generation length exact; the upstream code added prompt tokens twice.
+old_stop = """    current_position += user_prompt_size;
+    stop_generation_position = current_position + user_prompt_size + n_predict;"""
+new_stop = """    current_position += user_prompt_size;
+    stop_generation_position = current_position + n_predict;"""
+if ai_chat.count(old_stop) != 1:
+    raise SystemExit("Could not locate llama.cpp generation stop-position calculation")
+ai_chat = ai_chat.replace(old_stop, new_stop, 1)
 ai_chat_path.write_text(ai_chat, encoding="utf-8")
 upstream_logging = llama / "examples/llama.android/lib/src/main/cpp/logging.h"
 copy(upstream_logging, cpp / "logging.h")
@@ -181,6 +281,21 @@ new_load_error = """if (it != 0) {
 if engine.count(old_load_error) != 1:
     raise SystemExit("Could not update native model error propagation")
 engine = engine.replace(old_load_error, new_load_error, 1)
+
+old_prepare_error = """prepare().let {
+                    if (it != 0) throw IOException("Failed to prepare resources")
+                }"""
+new_prepare_error = """prepare().let {
+                    if (it != 0) {
+                        val nativeDetails = lastLoadError().trim()
+                        throw IOException(nativeDetails.ifBlank {
+                            "无法初始化模型上下文。设备可用内存不足，或当前模型运行参数不兼容。"
+                        })
+                    }
+                }"""
+if engine.count(old_prepare_error) != 1:
+    raise SystemExit("Could not expose native context initialization diagnostics")
+engine = engine.replace(old_prepare_error, new_prepare_error, 1)
 anchor = """            }
     }
 
