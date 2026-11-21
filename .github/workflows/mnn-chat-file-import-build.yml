@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.8.3 (arm64-v8a)
+    name: Build MNN Chat 0.8.5 (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -84,8 +84,8 @@ jobs:
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
                'applicationId "com.alibaba.mnnllm.android.localimport"'),
-              ("versionCode 830", "versionCode 832"),
-              ('versionName "0.8.3"', 'versionName "0.8.4-localimport"'),
+              ("versionCode 830", "versionCode 833"),
+              ('versionName "0.8.3"', 'versionName "0.8.5-conversion-diagnostics"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
@@ -94,8 +94,8 @@ jobs:
           gradle.write_text(source, encoding="utf-8")
 
           for relative, app_name in [
-              ("app/src/main/res/values-zh-rCN/strings.xml", "MNN Chat 本地导入版"),
-              ("app/src/main/res/values/strings.xml", "MNN Chat - Local Import"),
+              ("app/src/main/res/values-zh-rCN/strings.xml", "MNN Chat 模型诊断版"),
+              ("app/src/main/res/values/strings.xml", "MNN Chat - Conversion Diagnostics"),
           ]:
               path = root / relative
               text = path.read_text(encoding="utf-8")
@@ -161,7 +161,7 @@ jobs:
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
           sha256sum "$APK"
-          echo "### MNN Chat local-import build" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat conversion-diagnostics build" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK: \`$APK\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-256:" >> "$GITHUB_STEP_SUMMARY"
@@ -170,7 +170,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.8.3-local-import-arm64
+          name: mnn-chat-0.8.5-conversion-diagnostics-arm64
           path: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
