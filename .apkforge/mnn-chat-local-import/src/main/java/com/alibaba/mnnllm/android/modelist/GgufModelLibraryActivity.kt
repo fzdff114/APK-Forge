@@ -5,6 +5,8 @@ import android.app.ProgressDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.provider.OpenableColumns
 import android.view.Gravity
 import android.view.ViewGroup
@@ -193,14 +195,19 @@ class GgufModelLibraryActivity : AppCompatActivity() {
 
     private fun importFile(uri: Uri) {
         val name = queryDisplayName(uri)
-        val progress = showImportProgress()
+        val cancellation = CancellationSignal()
+        val progress = showImportProgress(cancellation)
         lifecycleScope.launch {
             try {
                 val imported = withContext(Dispatchers.IO) {
-                    LocalGgufModelImporter.copyFromUri(this@GgufModelLibraryActivity, uri, name)
+                    LocalGgufModelImporter.copyFromUri(
+                        this@GgufModelLibraryActivity, uri, name, cancellation
+                    ) { copied, total -> updateImportProgress(progress, copied, total) }
                 }
                 Toast.makeText(this@GgufModelLibraryActivity, "已导入：${imported.name}", Toast.LENGTH_LONG).show()
                 refreshModels()
+            } catch (_: OperationCanceledException) {
+                Toast.makeText(this@GgufModelLibraryActivity, "已取消导入，未保留不完整文件。", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(
                     this@GgufModelLibraryActivity,
@@ -208,17 +215,20 @@ class GgufModelLibraryActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             } finally {
-                progress.dismiss()
+                if (progress.isShowing) progress.dismiss()
             }
         }
     }
 
     private fun importFolder(uri: Uri) {
-        val progress = showImportProgress()
+        val cancellation = CancellationSignal()
+        val progress = showImportProgress(cancellation)
         lifecycleScope.launch {
             try {
                 val imported = withContext(Dispatchers.IO) {
-                    LocalGgufModelImporter.copyFromTree(this@GgufModelLibraryActivity, uri)
+                    LocalGgufModelImporter.copyFromTree(
+                        this@GgufModelLibraryActivity, uri, cancellation
+                    ) { copied, total -> updateImportProgress(progress, copied, total) }
                 }
                 if (imported == null) {
                     Toast.makeText(this@GgufModelLibraryActivity, "文件夹内没有 GGUF 文件。", Toast.LENGTH_LONG).show()
@@ -226,6 +236,8 @@ class GgufModelLibraryActivity : AppCompatActivity() {
                     Toast.makeText(this@GgufModelLibraryActivity, "已导入：${imported.name}", Toast.LENGTH_LONG).show()
                     refreshModels()
                 }
+            } catch (_: OperationCanceledException) {
+                Toast.makeText(this@GgufModelLibraryActivity, "已取消导入，未保留不完整文件。", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(
                     this@GgufModelLibraryActivity,
@@ -233,7 +245,7 @@ class GgufModelLibraryActivity : AppCompatActivity() {
                     Toast.LENGTH_LONG
                 ).show()
             } finally {
-                progress.dismiss()
+                if (progress.isShowing) progress.dismiss()
             }
         }
     }
@@ -245,13 +257,33 @@ class GgufModelLibraryActivity : AppCompatActivity() {
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "model.gguf"
     }
 
-    private fun showImportProgress(): ProgressDialog =
+    private fun showImportProgress(cancellation: CancellationSignal): ProgressDialog =
         ProgressDialog(this).apply {
             setTitle("导入本地模型")
-            setMessage("正在复制模型文件，请保持应用运行…")
-            setCancelable(false)
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = 100
+            progress = 0
+            isIndeterminate = true
+            setMessage("正在复制模型文件…")
+            setCancelable(true)
+            setCanceledOnTouchOutside(false)
+            setOnCancelListener { cancellation.cancel() }
             show()
         }
+
+    private fun updateImportProgress(dialog: ProgressDialog, copied: Long, total: Long) {
+        runOnUiThread {
+            if (!dialog.isShowing) return@runOnUiThread
+            if (total > 0L) {
+                dialog.isIndeterminate = false
+                dialog.progress = ((copied.coerceAtMost(total) * 100L) / total).toInt()
+                dialog.setMessage("已复制 ${formatSize(copied)} / ${formatSize(total)}，可以取消")
+            } else {
+                dialog.isIndeterminate = true
+                dialog.setMessage("已复制 ${formatSize(copied)}，正在读取文件…")
+            }
+        }
+    }
 
     private fun formatSize(bytes: Long): String {
         val units = arrayOf("B", "KB", "MB", "GB", "TB")
