@@ -1,4 +1,4 @@
-name: Build MNN Chat 0.8.7 with built-in updater removed
+name: Build MNN Chat 0.8.8 with local GGUF runtime
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.8.7 no-updater (arm64-v8a)
+    name: Build MNN Chat 0.8.8 GGUF runtime (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -54,10 +54,12 @@ jobs:
             "build-tools;35.0.0" \
             "platform-tools" \
             "ndk;27.2.12479018" \
-            "cmake;3.22.1"
+            "ndk;29.0.13113456" \
+            "cmake;3.22.1" \
+            "cmake;3.31.6"
           echo "ANDROID_NDK=$SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          echo "$SDK_ROOT/cmake/3.22.1/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/cmake/3.31.6/bin" >> "$GITHUB_PATH"
 
       - name: Clone official Alibaba MNN source
         shell: bash
@@ -67,6 +69,18 @@ jobs:
           echo "MNN_SOURCE_COMMIT=$(git -C "$RUNNER_TEMP/MNN" rev-parse HEAD)" >> "$GITHUB_ENV"
           git -C "$RUNNER_TEMP/MNN" log -1 --oneline
 
+      - name: Clone pinned llama.cpp Android GGUF runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/llama.cpp"
+          git -C "$RUNNER_TEMP/llama.cpp" init
+          git -C "$RUNNER_TEMP/llama.cpp" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$RUNNER_TEMP/llama.cpp" fetch --depth 1 origin 46eb1742db6d2caec1bfa848c5702b1bdcc815e5
+          git -C "$RUNNER_TEMP/llama.cpp" checkout --detach FETCH_HEAD
+          echo "LLAMA_CPP_SOURCE_DIR=$RUNNER_TEMP/llama.cpp" >> "$GITHUB_ENV"
+          echo "LLAMA_CPP_SOURCE_COMMIT=$(git -C "$RUNNER_TEMP/llama.cpp" rev-parse HEAD)" >> "$GITHUB_ENV"
+          git -C "$RUNNER_TEMP/llama.cpp" log -1 --oneline
       - name: Apply local model file-manager import
         shell: bash
         run: |
@@ -214,6 +228,14 @@ jobs:
 
           PY
 
+      - name: Integrate native GGUF runtime and restore original app branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/add_gguf_runtime.py" "$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat" "$RUNNER_TEMP/llama.cpp"
+          python3 -m py_compile "$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/add_gguf_runtime.py"
+          grep -n 'LLAMA_SRC' "$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat/app/src/main/cpp/CMakeLists.txt"
+          grep -n 'android:label="MNN Chat"' "$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat/app/src/main/AndroidManifest.xml"
       - name: Add Maven Central mirror fallback for CI
         shell: bash
         run: |
@@ -385,9 +407,11 @@ jobs:
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
           sha256sum "$APK"
-          echo "### MNN Chat 0.8.7 with built-in updater removed" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.8.8 with direct GGUF runtime" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- MNN source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- llama.cpp source commit: \`$LLAMA_CPP_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Direct GGUF JNI library: \`libai-chat.so\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK: \`$APK\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-256:" >> "$GITHUB_STEP_SUMMARY"
           sha256sum "$APK" >> "$GITHUB_STEP_SUMMARY"
@@ -395,7 +419,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.8.7-no-updater-arm64
+          name: mnn-chat-0.8.8-gguf-runtime-arm64
           path: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
