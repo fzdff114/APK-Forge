@@ -120,6 +120,7 @@ jobs:
           source = path.read_text(encoding="utf-8")
           anchor = "repositories {\n        mavenCentral()"
           replacement = """repositories {
+                  gradlePluginPortal()
                   maven { url 'https://maven.aliyun.com/repository/google' }
                   maven { url 'https://maven.aliyun.com/repository/central' }
                   maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
@@ -133,6 +134,29 @@ jobs:
           print("Added Aliyun Google/Central/Gradle-plugin mirrors before upstream repositories.")
           PY
           grep -n "maven.aliyun.com" "$SETTINGS"
+
+      - name: Remove unused Firebase Gradle plugin markers from standard debug build
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT_GRADLE="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat/build.gradle"
+          python3 - "$ROOT_GRADLE" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          source = path.read_text(encoding="utf-8")
+          optional_plugins = [
+              "id 'com.google.gms.google-services' version '4.4.4' apply false",
+              "id 'com.google.firebase.crashlytics' version '3.0.3' apply false",
+          ]
+          for plugin in optional_plugins:
+              if source.count(plugin) != 1:
+                  raise SystemExit(f"Expected exactly one optional plugin declaration: {plugin}")
+              source = source.replace(plugin, "// Optional Firebase plugin intentionally omitted in standard debug build.")
+          path.write_text(source, encoding="utf-8")
+          print("Firebase plugins omitted: ENABLE_FIREBASE defaults to false and no google-services.json is present.")
+          PY
 
       - name: Build MNN runtime from the same source revision
         shell: bash
