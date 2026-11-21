@@ -1,4 +1,4 @@
-name: Build MNN Chat 0.8.7 Java crash fix
+name: Build MNN Chat 0.8.7 with built-in updater removed
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.8.7 (arm64-v8a)
+    name: Build MNN Chat 0.8.7 no-updater (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -81,57 +81,54 @@ jobs:
           root = Path(sys.argv[1])
           checker = root / "app/src/main/java/com/alibaba/mnnllm/android/update/UpdateChecker.kt"
           source = checker.read_text(encoding="utf-8")
-          start = source.index("    private fun isNewerVersion(")
-          end = source.index("    private fun showUpdateDialog(", start)
-          replacement = '''    private fun isNewerVersion(latest: String, current: String): Boolean {
-                  return UpdateVersionComparator.isNewer(latest, current)
+
+          # Remove the old online app-update check, version parser, popup and APK download code.
+          start = source.index('    @SuppressLint("LogNotTimber")\n    fun checkForUpdates(')
+          end = source.index("    private val versionName:", start)
+          disabled_check = '''    @SuppressLint("LogNotTimber")
+              fun checkForUpdates(context: Context, forceCheck: Boolean) {
+                  Log.i(TAG, "Built-in app updater is disabled in this build.")
               }
 
           '''
-          source = source[:start] + replacement + source[end:]
-          old_catch = "} catch (e: JSONException) {"
-          if source.count(old_catch) != 1:
-              raise SystemExit("Expected exactly one update-response JSONException catch")
-          source = source.replace(old_catch, "} catch (e: Exception) {", 1)
-          source = source.replace(
-              'Log.e(TAG, "check version error", e)',
-              'Log.e(TAG, "Update response processing failed; safely skipping update check", e)',
-              1
-          )
+          source = source[:start] + disabled_check + source[end:]
+
+          # Disable the old installer and download-complete receiver as well.
+          install_start = source.index("        fun installApk(")
+          install_end = source.index("        fun registerDownloadReceiver(", install_start)
+          source = source[:install_start] + '''        fun installApk(context: Context, downloadId: Long, fileUri: Uri? = null) {
+                      Log.i(TAG, "Built-in app installer is disabled in this build.")
+                  }
+
+          ''' + source[install_end:]
+
+          register_start = source.index("        fun registerDownloadReceiver(")
+          register_end = source.index("\n\n    }\n\n}", register_start)
+          source = source[:register_start] + '''        fun registerDownloadReceiver(context: Context) {
+                      Log.i(TAG, "Built-in app update receiver is disabled in this build.")
+                  }''' + source[register_end:]
           checker.write_text(source, encoding="utf-8")
+          print("Removed built-in update requests, comparison, popup/download, installer and receiver.")
 
-          code_dir = root / "app/src/main/java/com/alibaba/mnnllm/android/update"
-          code_dir.mkdir(parents=True, exist_ok=True)
-          (code_dir / "UpdateVersionComparator.kt").write_text('''package com.alibaba.mnnllm.android.update
-
-          /** Numeric version comparison that safely ignores optional display/build suffixes. */
-          internal object UpdateVersionComparator {
-              fun isNewer(latest: String, current: String): Boolean {
-                  val latestParts = parseVersion(latest) ?: return false
-                  val currentParts = parseVersion(current) ?: return false
-                  val length = maxOf(latestParts.size, currentParts.size)
-                  for (index in 0 until length) {
-                      val latestNumber = latestParts.getOrElse(index) { 0 }
-                      val currentNumber = currentParts.getOrElse(index) { 0 }
-                      if (latestNumber > currentNumber) return true
-                      if (latestNumber < currentNumber) return false
-                  }
-                  return false
-              }
-
-              private fun parseVersion(value: String): List<Int>? {
-                  val numericVersion = Regex("""^\\s*[vV]?(\\d+(?:\\.\\d+)*)""")
-                      .find(value)?.groupValues?.getOrNull(1) ?: return null
-                  return numericVersion.split('.').map { part ->
-                      part.toIntOrNull() ?: return null
-                  }
-              }
-          }
-          ''', encoding="utf-8")
-
-          test_dir = root / "app/src/test/java/com/alibaba/mnnllm/android/update"
-          test_dir.mkdir(parents=True, exist_ok=True)
-          print("Patched update version parsing.")
+          # These nested modules have separate buildscript repositories. Root settings do not
+          # control their buildscript classpaths, which previously fell through to rate-limited Central.
+          module_gradles = [
+              root.parent.parent / "frameworks/mnn_tts/android/build.gradle",
+              root.parent.parent / "frameworks/model_downloader/android/build.gradle",
+          ]
+          for gradle in module_gradles:
+              gradle_text = gradle.read_text(encoding="utf-8")
+              anchor = "    repositories {\n        google()\n        mavenCentral()\n    }"
+              mirrored = """    repositories {
+                          maven { url 'https://maven.aliyun.com/repository/public' }
+                          maven { url 'https://repo.huaweicloud.com/repository/maven/' }
+                          google()
+                          mavenCentral()
+                      }"""
+              if gradle_text.count(anchor) != 1:
+                  raise SystemExit(f"Expected one buildscript repository block in {gradle}")
+              gradle.write_text(gradle_text.replace(anchor, mirrored, 1), encoding="utf-8")
+              print(f"Added Maven mirrors to {gradle}")
           PY
           APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
           python3 - "$APP_ROOT" <<'PY'
@@ -183,6 +180,8 @@ jobs:
                   gradlePluginPortal()
                   maven { url 'https://maven.aliyun.com/repository/google' }
                   maven { url 'https://maven.aliyun.com/repository/central' }
+                  maven { url 'https://maven.aliyun.com/repository/public' }
+                  maven { url 'https://repo.huaweicloud.com/repository/maven/' }
                   maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
                   mavenCentral()"""
           if source.count(anchor) != 2:
@@ -336,7 +335,7 @@ jobs:
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
           sha256sum "$APK"
-          echo "### MNN Chat 0.8.7 Java crash fix" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.8.7 with built-in updater removed" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK: \`$APK\`" >> "$GITHUB_STEP_SUMMARY"
@@ -346,7 +345,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.8.7-java-crash-fix-arm64
+          name: mnn-chat-0.8.7-no-updater-arm64
           path: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
