@@ -1,0 +1,105 @@
+name: GGUF ModelScope Qwen2.5 0.5B smoke test
+
+on:
+  push:
+    branches:
+      - mnn-chat-conversion-diagnostics
+    paths:
+      - ".github/workflows/mnn-chat-gguf-model-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mnn-chat-gguf-model-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qwen-gguf-smoke:
+    name: Download ModelScope Qwen2.5 0.5B and run llama.cpp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout build scripts
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Clone the exact llama.cpp revision used by the APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/llama.cpp"
+          mkdir -p "$SRC"
+          git -C "$SRC" init
+          git -C "$SRC" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$SRC" fetch --depth 1 origin 46eb1742db6d2caec1bfa848c5702b1bdcc815e5
+          git -C "$SRC" checkout --detach FETCH_HEAD
+          test "$(git -C "$SRC" rev-parse HEAD)" = "46eb1742db6d2caec1bfa848c5702b1bdcc815e5"
+
+      - name: Build host llama.cpp CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/llama.cpp"
+          BUILD="$RUNNER_TEMP/llama-host-build"
+          cmake -S "$SRC" -B "$BUILD" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_NATIVE=OFF \
+            -DGGML_OPENMP=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=ON \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DLLAMA_CURL=OFF
+          cmake --build "$BUILD" --config Release --parallel 2 --target llama-cli
+          test -x "$BUILD/bin/llama-cli"
+
+      - name: Download and verify small Qwen2 GGUF from ModelScope
+        shell: bash
+        run: |
+          set -euo pipefail
+          MODEL="$RUNNER_TEMP/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+          URL="https://modelscope.cn/models/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/master/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --connect-timeout 30 --max-time 1200 \
+            "$URL" --output "$MODEL"
+          test -s "$MODEL"
+          ACTUAL_SIZE="$(stat -c '%s' "$MODEL")"
+          EXPECTED_SIZE="491400032"
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
+            echo "::error::ModelScope model size mismatch: expected $EXPECTED_SIZE, got $ACTUAL_SIZE"
+            exit 1
+          fi
+          EXPECTED_SHA="74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
+          echo "$EXPECTED_SHA  $MODEL" | sha256sum --check
+          echo "MODEL_FILE=$MODEL" >> "$GITHUB_ENV"
+
+      - name: Load the real GGUF and generate a short answer
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLI="$RUNNER_TEMP/llama-host-build/bin/llama-cli"
+          OUTPUT="$RUNNER_TEMP/qwen-gguf-inference.log"
+          timeout 240 "$CLI" \
+            --model "$MODEL_FILE" \
+            --prompt "请用中文简短回答：1+1等于几？" \
+            --n-predict 32 \
+            --ctx-size 2048 \
+            --n-gpu-layers 0 \
+            --single-turn \
+            --simple-io \
+            --no-display-prompt \
+            --no-warmup \
+            > "$OUTPUT" 2>&1
+          if ! grep -Eiq "model|token|ggml" "$OUTPUT"; then
+            echo "::error::llama.cpp exited without producing recognizable model or inference logs."
+            cat "$OUTPUT"
+            exit 1
+          fi
+          tail -n 40 "$OUTPUT"
+          echo "## ModelScope GGUF smoke test passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Model: Qwen2.5-0.5B-Instruct-GGUF" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Quantization: Q4_K_M (491,400,032 bytes)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- llama.cpp commit: 46eb1742db6d2caec1bfa848c5702b1bdcc815e5" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-256: $EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
