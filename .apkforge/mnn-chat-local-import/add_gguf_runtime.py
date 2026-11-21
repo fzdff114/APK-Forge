@@ -16,6 +16,19 @@ def copy(src, dst):
 
 copy(llama / "examples/llama.android/lib/src/main/cpp/ai_chat.cpp", cpp / "ai_chat.cpp")
 copy(llama / "examples/llama.android/lib/src/main/cpp/logging.h", cpp / "logging.h")
+# The upstream helper calls __android_log_is_loggable(), an API-30 symbol. The app supports
+# API 26+, so use compile-time priority filtering to keep the native library loadable.
+logging_path = cpp / "logging.h"
+logging = logging_path.read_text(encoding="utf-8")
+old_filter = """static inline int ai_should_log(int prio) {
+    return __android_log_is_loggable(prio, LOG_TAG, LOG_MIN_LEVEL);
+}"""
+new_filter = """static inline int ai_should_log(int prio) {
+    return prio >= LOG_MIN_LEVEL;
+}"""
+if logging.count(old_filter) != 1:
+    raise SystemExit("Could not locate upstream Android-30 log filter")
+logging_path.write_text(logging.replace(old_filter, new_filter, 1), encoding="utf-8")
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/AiChat.kt", java / "com/arm/aichat/AiChat.kt")
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/InferenceEngine.kt", java / "com/arm/aichat/InferenceEngine.kt")
 engine_path = java / "com/arm/aichat/internal/InferenceEngineImpl.kt"
