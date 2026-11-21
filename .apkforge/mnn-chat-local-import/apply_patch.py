@@ -146,17 +146,23 @@ def main() -> None:
         lifecycleScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    val header = contentResolver.openInputStream(uri)?.use { input ->
-                        val bytes = ByteArray(8)
-                        var count = 0
-                        while (count < bytes.size) {
-                            val read = input.read(bytes, count, bytes.size - count)
-                            if (read <= 0) break
-                            count += read
-                        }
-                        bytes.copyOf(count)
-                    } ?: byteArrayOf()
-                    val detection = LocalModelFormatInspector.inspectFile(displayName, header)
+                    val detection = if (displayName.endsWith(".gguf", ignoreCase = true)) {
+                        val ggufInput = contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("无法读取所选 GGUF 文件。")
+                        ggufInput.use { LocalModelFormatInspector.inspectGguf(displayName, it) }
+                    } else {
+                        val header = contentResolver.openInputStream(uri)?.use { input ->
+                            val bytes = ByteArray(8)
+                            var count = 0
+                            while (count < bytes.size) {
+                                val read = input.read(bytes, count, bytes.size - count)
+                                if (read <= 0) break
+                                count += read
+                            }
+                            bytes.copyOf(count)
+                        } ?: byteArrayOf()
+                        LocalModelFormatInspector.inspectFile(displayName, header)
+                    }
                     val importedDirectory = if (detection.format == LocalModelFormatInspector.Format.ZIP &&
                         detection.state != LocalModelFormatInspector.State.INVALID
                     ) {
@@ -325,6 +331,8 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporter.kt"),
         Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManager.kt":
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManager.kt"),
+        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReader.kt":
+            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReader.kt"),
         Path(__file__).parent / "tests/LocalModelConversionManagerTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManagerTest.kt"),
         Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
