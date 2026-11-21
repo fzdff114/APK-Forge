@@ -202,7 +202,7 @@ main_source = (
     + main_source[folder_end:]
 )
 file_start = main_source.index('                    startActivity(Intent(this@MainActivity, GgufChatActivity::class.java)')
-file_end = main_source.index('\\n                } catch (_: OperationCanceledException)', file_start)
+file_end = main_source.index("                } catch (_: OperationCanceledException)", file_start)
 main_source = main_source[:file_start] + '''                    refreshImportedGgufModels(1)''' + main_source[file_end:]
 
 library_method = '''    fun openGgufModelLibrary(view: android.view.View?) {
