@@ -243,7 +243,11 @@ class GgufChatActivity : AppCompatActivity() {
                 transcript.append(
                     "模型已就绪：" + modelFile.name +
                         "\n文件大小：" + formatSize(modelFile.length()) +
-                        "\n元数据：" + metadataSummary.take(220) + "\n\n"
+                        "\nGGUF 版本：" + metadata.version +
+                        "\n架构：" + (metadata.architecture ?: "未知") +
+                        "\n张量：" + metadata.tensorCount +
+                        "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
+                        "\n\n"
                 )
             } catch (e: Exception) {
                 status.text = "模型加载失败：" + (e.message ?: e.javaClass.simpleName)
