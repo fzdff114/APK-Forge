@@ -79,6 +79,8 @@ object LocalGgufModelImporter {
     private val shardPattern = Regex("(?i)-(\\d{5})-of-(\\d{5})\\.gguf$")
 
     fun copyFromUri(context: Context, uri: Uri, displayName: String): File {
+        if (shardPattern.containsMatchIn(displayName))
+            throw IOException("检测到 GGUF 分片文件。请直接选择包含全部分片的文件夹，不要只选择单个分片。")
         val folder = createFolder(context, displayName)
         try {
             val target = File(folder, safeName(displayName))
@@ -95,6 +97,8 @@ object LocalGgufModelImporter {
         val found = mutableListOf<Pair<DocumentFile, String>>()
         collect(tree, "", 0, found)
         if (found.isEmpty()) return null
+        if (found.any { it.first.name?.contains("mmproj", true) == true })
+            throw IOException("当前版本先支持纯文本 GGUF。所选目录包含 mmproj 多模态投影文件，视觉/多模态推理尚未接入。")
         val groups = found.groupBy { it.second.substringBeforeLast('/', "") }
         if (groups.size != 1) throw IOException("所选文件夹包含多个 GGUF 模型，请选择单个模型文件夹。")
         val files = groups.values.single()
@@ -103,7 +107,8 @@ object LocalGgufModelImporter {
         val mainName: String
         if (shards.isNotEmpty()) {
             val total = shards.first().second.groupValues[2].toInt()
-            if (shards.size != files.size || shards.any { it.second.groupValues[2].toInt() != total })
+            if (shards.size != files.size || shards.size != total ||
+                shards.any { it.second.groupValues[2].toInt() != total })
                 throw IOException("GGUF 分片集合不完整或属于不同模型。")
             val indices = shards.map { it.second.groupValues[1].toInt() }.toSet()
             if (indices != (1..total).toSet()) throw IOException("GGUF 分片不完整：应有 1 到 $total 号分片。")
@@ -133,7 +138,7 @@ object LocalGgufModelImporter {
         dir.listFiles().forEach { child ->
             val name = child.name ?: return@forEach
             if (child.isDirectory) collect(child, if (relative.isEmpty()) name else "$relative/$name", depth + 1, out)
-            else if (child.isFile && name.endsWith(".gguf", true) && !name.contains("mmproj", true))
+            else if (child.isFile && name.endsWith(".gguf", true))
                 out += child to if (relative.isEmpty()) name else "$relative/$name"
         }
     }
@@ -187,6 +192,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
+import com.arm.aichat.gguf.GgufMetadataReader
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -209,18 +215,34 @@ class GgufChatActivity : AppCompatActivity() {
         buildUi(File(path).name)
         lifecycleScope.launch {
             try {
-                val modelEngine = withContext(Dispatchers.IO) { AiChat.getInferenceEngine(applicationContext) }
+                val modelFile = File(path)
+                status.text = "正在校验 GGUF 元数据…"
+                val metadataSummary = withContext(Dispatchers.IO) {
+                    modelFile.inputStream().buffered().use { stream ->
+                        GgufMetadataReader.create().readStructuredMetadata(stream).toString()
+                    }
+                }
+                status.text = "GGUF 元数据校验通过，正在启动推理引擎…"
+                val modelEngine = withContext(Dispatchers.Default) {
+                    AiChat.getInferenceEngine(applicationContext)
+                }
                 engine = modelEngine
                 val initial = modelEngine.state.first {
                     it is InferenceEngine.State.Initialized || it is InferenceEngine.State.Error
                 }
                 if (initial is InferenceEngine.State.Error) throw initial.exception
-                modelEngine.loadModel(path)
-                modelEngine.setSystemPrompt("你是一个有帮助的中文 AI 助手。请清晰、准确地回答问题。")
+                withContext(Dispatchers.IO) {
+                    modelEngine.loadModel(path)
+                    modelEngine.setSystemPrompt("你是一个有帮助的中文 AI 助手。请清晰、准确地回答问题。")
+                }
                 ready = true
                 status.text = "模型已加载，可以开始对话"
                 send.isEnabled = true
-                transcript.append("模型已就绪：" + File(path).name + "\n\n")
+                transcript.append(
+                    "模型已就绪：" + modelFile.name +
+                        "\n文件大小：" + formatSize(modelFile.length()) +
+                        "\n元数据：" + metadataSummary.take(220) + "\n\n"
+                )
             } catch (e: Exception) {
                 status.text = "模型加载失败：" + (e.message ?: e.javaClass.simpleName)
             }
@@ -242,6 +264,13 @@ class GgufChatActivity : AppCompatActivity() {
                 }
             }
         })
+    }
+
+    override fun onDestroy() {
+        generation?.cancel()
+        try { engine?.destroy() } catch (_: Exception) {}
+        engine = null
+        super.onDestroy()
     }
 
     private fun buildUi(modelName: String) {
@@ -272,15 +301,35 @@ class GgufChatActivity : AppCompatActivity() {
         input.text?.clear()
         transcript.append("你：" + message + "\n助手：")
         send.isEnabled = false
-        generation = lifecycleScope.launch {
+        generation = lifecycleScope.launch(Dispatchers.Default) {
             try {
-                active.sendUserPrompt(message, 512).collect { token -> transcript.append(token) }
-                transcript.append("\n\n")
+                active.sendUserPrompt(message, 512).collect { token ->
+                    withContext(Dispatchers.Main.immediate) { transcript.append(token) }
+                }
+                withContext(Dispatchers.Main.immediate) { transcript.append("\n\n") }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                status.text = "生成失败：" + (e.message ?: e.javaClass.simpleName)
-            } finally { send.isEnabled = ready }
+                withContext(Dispatchers.Main.immediate) {
+                    status.text = "生成失败：" + (e.message ?: e.javaClass.simpleName)
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) { send.isEnabled = ready }
+            }
         }
     }
+
+    private fun formatSize(bytes: Long): String {
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        var value = bytes.toDouble()
+        var index = 0
+        while (value >= 1024.0 && index < units.lastIndex) {
+            value /= 1024.0
+            index++
+        }
+        return String.format(java.util.Locale.ROOT, "%.2f %s", value, units[index])
+    }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 }
 '''
