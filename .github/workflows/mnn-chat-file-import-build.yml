@@ -5,6 +5,7 @@ on:
     branches:
       - mnn-chat-local-file-import
       - mnn-chat-conversion-diagnostics
+      - mnn-chat-gguf-feature-improvements
     paths:
       - ".github/workflows/mnn-chat-file-import-build.yml"
       - ".apkforge/mnn-chat-local-import/**"
