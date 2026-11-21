@@ -1,4 +1,4 @@
-name: Build MNN Chat 0.9.4 with native GGUF validation
+name: Build MNN Chat 0.9.5 with verified DeepSeek import and original chat UI
 
 on:
   push:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.9.4 GGUF runtime (arm64-v8a)
+    name: Build MNN Chat 0.9.5 GGUF runtime (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -181,9 +181,9 @@ jobs:
           source = gradle.read_text(encoding="utf-8")
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
-               'applicationId "com.alibaba.mnnllm.android.localimport094"'),
-              ("versionCode 830", "versionCode 842"),
-              ('versionName "0.8.3"', 'versionName "0.9.4"'),
+               'applicationId "com.alibaba.mnnllm.android.localimport095"'),
+              ("versionCode 830", "versionCode 843"),
+              ('versionName "0.8.3"', 'versionName "0.9.5"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
@@ -191,7 +191,7 @@ jobs:
               source = source.replace(old, new, 1)
           gradle.write_text(source, encoding="utf-8")
 
-          print("Variant package set to com.alibaba.mnnllm.android.localimport094 (preserves earlier app installs and their private data); app label stays MNN Chat.")
+          print("Variant package set to com.alibaba.mnnllm.android.localimport095 (preserves earlier app installs and their private data); app label stays MNN Chat.")
 
           PY
 
@@ -238,6 +238,15 @@ jobs:
           print("Staged model-library sources: " + ", ".join(copied))
           print("Staged regression tests: " + ", ".join(source.name for source in test_files))
           PY
+      - name: Integrate GGUF backend into the original MNN Chat screen
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
+          python3 -m py_compile "$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/integrate_original_chat.py"
+          python3 "$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/integrate_original_chat.py" "$APP_ROOT"
+          grep -n 'GgufChatSession' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/chat/ChatPresenter.kt"
+          grep -n 'isGgufSession' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/chat/ChatActivity.kt"
       - name: Add Maven Central mirror fallback for CI
         shell: bash
         run: |
@@ -408,11 +417,11 @@ jobs:
             assembleStandardDebug --stacktrace
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
-          OUTPUT_APK="$RUNNER_TEMP/MNN_Chat_0.9.4_SideBySide_arm64.apk"
+          OUTPUT_APK="$RUNNER_TEMP/MNN_Chat_0.9.5_SideBySide_arm64.apk"
           cp "$APK" "$OUTPUT_APK"
           test -s "$OUTPUT_APK"
           sha256sum "$OUTPUT_APK"
-          echo "### MNN Chat 0.9.4 with native GGUF validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.9.5 with verified DeepSeek import and original chat UI" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
           echo "- MNN source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- llama.cpp source commit: \`$LLAMA_CPP_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
@@ -424,7 +433,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.9.4-gguf-runtime-arm64
+          name: mnn-chat-0.9.5-gguf-runtime-arm64
           path: ${{ runner.temp }}/MNN_Chat_0.9.4_SideBySide_arm64.apk
           if-no-files-found: error
           retention-days: 14
