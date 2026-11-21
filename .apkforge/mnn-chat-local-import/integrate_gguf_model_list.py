@@ -143,6 +143,7 @@ holder_source = holder_source.replace(
     "import kotlinx.coroutines.MainScope\nimport kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.launch\nimport kotlinx.coroutines.withContext\n",
     1
 )
+holder.write_text(holder_source, encoding="utf-8")
 delete_old = '''                            // Use ModelDeletionHelper for proper cleanup of mmap cache and chat sessions
                             val result = ModelDeletionHelper.deleteModelWithCleanup(v.context, modelId!!)
                             if (!result.modelDeleted) {
@@ -174,7 +175,6 @@ deletable_new = '''        val isDownloaded = modelWrapper.downloadedModelInfo !
         val isDeletable = (isDownloaded || isManagedLocal) && !isBuiltin
 '''
 replace_once(holder, deletable_old, deletable_new, "Local model Delete menu visibility")
-holder.write_text(holder_source, encoding="utf-8")
 
 # After import, refresh the main MNN Local Models tab instead of opening a GGUF-only Activity.
 main = java / "main/MainActivity.kt"
