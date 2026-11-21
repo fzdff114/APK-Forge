@@ -192,7 +192,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
-import com.arm.aichat.gguf.GgufMetadataReader
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -217,9 +216,12 @@ class GgufChatActivity : AppCompatActivity() {
             try {
                 val modelFile = File(path)
                 status.text = "正在校验 GGUF 元数据…"
-                val metadataSummary = withContext(Dispatchers.IO) {
+                val metadata = withContext(Dispatchers.IO) {
                     modelFile.inputStream().buffered().use { stream ->
-                        GgufMetadataReader.create().readStructuredMetadata(stream).toString()
+                        when (val result = GgufMetadataReader.inspect(stream)) {
+                            is GgufMetadataReader.Result.Success -> result.metadata
+                            is GgufMetadataReader.Result.Failure -> throw java.io.IOException(result.reason)
+                        }
                     }
                 }
                 status.text = "GGUF 元数据校验通过，正在启动推理引擎…"
