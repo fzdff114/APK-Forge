@@ -110,7 +110,7 @@ class GgufMetadataReaderTest {
         output.write(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
         writeU32(output, 3)
         writeU64(output, types.size.toLong())
-        writeU64(output, (if (includeTokenArray) 4 else 3) + if (longScalarStringBytes > 0) 1 else 0)
+        writeU64(output, ((if (includeTokenArray) 4 else 3) + if (longScalarStringBytes > 0) 1 else 0).toLong())
 
         writeString(output, "general.architecture")
         writeU32(output, 8)
