@@ -1,6 +1,5 @@
 package com.alibaba.mnnllm.android.modelist
 
-import android.system.Os
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -34,12 +33,9 @@ object GgufChatHistoryStore {
                 output.write(transcript.toByteArray(Charsets.UTF_8))
                 output.fd.sync()
             }
-            try {
-                Os.rename(temporary.absolutePath, file.absolutePath)
-            } catch (error: Exception) {
+            if (!temporary.renameTo(file)) {
                 throw IllegalStateException(
-                    "Cannot commit GGUF chat history; the previous transcript was preserved.",
-                    error
+                    "Cannot commit GGUF chat history; the previous transcript was preserved."
                 )
             }
         } finally {
