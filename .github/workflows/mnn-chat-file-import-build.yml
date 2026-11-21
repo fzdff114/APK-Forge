@@ -104,58 +104,58 @@ jobs:
           code_dir.mkdir(parents=True, exist_ok=True)
           (code_dir / "UpdateVersionComparator.kt").write_text('''package com.alibaba.mnnllm.android.update
 
-/** Numeric version comparison that safely ignores optional display/build suffixes. */
-internal object UpdateVersionComparator {
-    fun isNewer(latest: String, current: String): Boolean {
-        val latestParts = parseVersion(latest) ?: return false
-        val currentParts = parseVersion(current) ?: return false
-        val length = maxOf(latestParts.size, currentParts.size)
-        for (index in 0 until length) {
-            val latestNumber = latestParts.getOrElse(index) { 0 }
-            val currentNumber = currentParts.getOrElse(index) { 0 }
-            if (latestNumber > currentNumber) return true
-            if (latestNumber < currentNumber) return false
-        }
-        return false
-    }
+          /** Numeric version comparison that safely ignores optional display/build suffixes. */
+          internal object UpdateVersionComparator {
+              fun isNewer(latest: String, current: String): Boolean {
+                  val latestParts = parseVersion(latest) ?: return false
+                  val currentParts = parseVersion(current) ?: return false
+                  val length = maxOf(latestParts.size, currentParts.size)
+                  for (index in 0 until length) {
+                      val latestNumber = latestParts.getOrElse(index) { 0 }
+                      val currentNumber = currentParts.getOrElse(index) { 0 }
+                      if (latestNumber > currentNumber) return true
+                      if (latestNumber < currentNumber) return false
+                  }
+                  return false
+              }
 
-    private fun parseVersion(value: String): List<Int>? {
-        val numericVersion = Regex("""^\\s*[vV]?(\\d+(?:\\.\\d+)*)""")
-            .find(value)?.groupValues?.getOrNull(1) ?: return null
-        return numericVersion.split('.').map { part ->
-            part.toIntOrNull() ?: return null
-        }
-    }
-}
-''', encoding="utf-8")
+              private fun parseVersion(value: String): List<Int>? {
+                  val numericVersion = Regex("""^\\s*[vV]?(\\d+(?:\\.\\d+)*)""")
+                      .find(value)?.groupValues?.getOrNull(1) ?: return null
+                  return numericVersion.split('.').map { part ->
+                      part.toIntOrNull() ?: return null
+                  }
+              }
+          }
+          ''', encoding="utf-8")
 
           test_dir = root / "app/src/test/java/com/alibaba/mnnllm/android/update"
           test_dir.mkdir(parents=True, exist_ok=True)
           (test_dir / "UpdateVersionComparatorTest.kt").write_text('''package com.alibaba.mnnllm.android.update
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+          import org.junit.Assert.assertFalse
+          import org.junit.Assert.assertTrue
+          import org.junit.Test
 
-class UpdateVersionComparatorTest {
-    @Test fun ignoresBuildSuffix() {
-        assertFalse(UpdateVersionComparator.isNewer("0.8.6", "0.8.6-native-coherent"))
-        assertTrue(UpdateVersionComparator.isNewer("0.8.7", "0.8.6-native-coherent"))
-    }
-    @Test fun comparesNumericComponents() {
-        assertTrue(UpdateVersionComparator.isNewer("0.8.10", "0.8.9"))
-        assertFalse(UpdateVersionComparator.isNewer("0.8.5", "0.8.6"))
-        assertFalse(UpdateVersionComparator.isNewer("1.2", "1.2.0"))
-    }
-    @Test fun ignoresPrereleaseSuffix() {
-        assertTrue(UpdateVersionComparator.isNewer("v0.9.0-preview", "0.8.7"))
-    }
-    @Test fun invalidVersionsDoNotThrow() {
-        assertFalse(UpdateVersionComparator.isNewer("unknown", "0.8.7"))
-        assertFalse(UpdateVersionComparator.isNewer("0.8.8", "not-a-version"))
-    }
-}
-''', encoding="utf-8")
+          class UpdateVersionComparatorTest {
+              @Test fun ignoresBuildSuffix() {
+                  assertFalse(UpdateVersionComparator.isNewer("0.8.6", "0.8.6-native-coherent"))
+                  assertTrue(UpdateVersionComparator.isNewer("0.8.7", "0.8.6-native-coherent"))
+              }
+              @Test fun comparesNumericComponents() {
+                  assertTrue(UpdateVersionComparator.isNewer("0.8.10", "0.8.9"))
+                  assertFalse(UpdateVersionComparator.isNewer("0.8.5", "0.8.6"))
+                  assertFalse(UpdateVersionComparator.isNewer("1.2", "1.2.0"))
+              }
+              @Test fun ignoresPrereleaseSuffix() {
+                  assertTrue(UpdateVersionComparator.isNewer("v0.9.0-preview", "0.8.7"))
+              }
+              @Test fun invalidVersionsDoNotThrow() {
+                  assertFalse(UpdateVersionComparator.isNewer("unknown", "0.8.7"))
+                  assertFalse(UpdateVersionComparator.isNewer("0.8.8", "not-a-version"))
+              }
+          }
+          ''', encoding="utf-8")
           print("Patched update version parsing and added regression tests.")
           PY
           APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
