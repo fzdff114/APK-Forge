@@ -76,6 +76,17 @@ class LocalModelFormatInspectorTest {
     }
 
     @Test
+    fun readsTemplateArchitectureFromModelConfig() {
+        val result = LocalModelFormatInspector.inspectTemplate(
+            setOf("config.json", "llm.mnn", "llm.mnn.json", "llm_config.json", "tokenizer.mtok"),
+            """{"model_type":"llama"}"""
+        )
+
+        assertTrue(result.valid)
+        assertEquals("llama", result.architecture)
+    }
+
+    @Test
     fun identifiesOtherCommonFormatsWithoutClaimingDirectImport() {
         val onnx = LocalModelFormatInspector.inspectFile("model.onnx", byteArrayOf())
         val tflite = LocalModelFormatInspector.inspectFile("model.tflite", byteArrayOf())
