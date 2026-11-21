@@ -35,6 +35,26 @@ class GgufMetadataReaderTest {
     }
 
     @Test
+    fun exposesArchitectureAndSupportedWeightTypesInReadinessInspection() {
+        val result = LocalModelFormatInspector.inspectGguf("fixture.gguf", ggufFixture(listOf(2, 14), false).inputStream())
+
+        assertEquals(LocalModelFormatInspector.Format.GGUF, result.format)
+        assertEquals(LocalModelFormatInspector.State.RECOGNIZED_NEEDS_TEMPLATE, result.state)
+        assertEquals("llama", result.architecture)
+        assertEquals(setOf("Q4_0", "Q6_K"), result.tensorTypes)
+        assertTrue(result.details.contains("GGUF v3"))
+        assertTrue(result.details.contains("尚未编入"))
+    }
+
+    @Test
+    fun flagsUnsupportedQuantizationInReadinessInspection() {
+        val result = LocalModelFormatInspector.inspectGguf("fixture.gguf", ggufFixture(listOf(39), false).inputStream())
+
+        assertEquals(LocalModelFormatInspector.State.RECOGNIZED_NOT_CONVERTIBLE_HERE, result.state)
+        assertEquals(setOf("MXFP4"), result.unsupportedTensorTypes)
+    }
+
+    @Test
     fun rejectsTruncatedGgufHeaderGracefully() {
         val result = GgufMetadataReader.inspect(byteArrayOf(
             'G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte(),
