@@ -149,7 +149,9 @@ object GgufMetadataReader {
                 if (dimension <= 0L) throw IOException("GGUF 张量维度无效：${tensorName ?: "未知张量"}")
             }
             val typeIdLong = reader.readU32()
-            if (typeIdLong > Int.MAX_VALUE) throw IOException("GGUF 张量类型编号无效：$tensorName")
+            if (typeIdLong > Int.MAX_VALUE) {
+                throw IOException("GGUF 张量类型编号无效：${tensorName ?: "未知张量"}")
+            }
             typeIds += typeIdLong.toInt()
             reader.readU64() // relative offset into the tensor payload; payload remains unread
             if (tensorNames.size < 32 && tensorName != null) tensorNames += tensorName
@@ -270,7 +272,7 @@ object GgufMetadataReader {
                 4L, 5L, 6L -> skipFully(4)
                 8L -> {
                     // Array string values can contain long tokenizer/chat-template entries.
-                    // Stream-skip them and let the aggregate 64 MiB header limit bound I/O.
+                    // Stream-skip them; reads stop at the actual end of the GGUF input stream.
                     skipFully(readU64())
                 }
                 10L, 11L, 12L -> skipFully(8)
