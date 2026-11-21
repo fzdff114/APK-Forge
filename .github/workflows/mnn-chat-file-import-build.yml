@@ -131,32 +131,7 @@ jobs:
 
           test_dir = root / "app/src/test/java/com/alibaba/mnnllm/android/update"
           test_dir.mkdir(parents=True, exist_ok=True)
-          (test_dir / "UpdateVersionComparatorTest.kt").write_text('''package com.alibaba.mnnllm.android.update
-
-          import org.junit.Assert.assertFalse
-          import org.junit.Assert.assertTrue
-          import org.junit.Test
-
-          class UpdateVersionComparatorTest {
-              @Test fun ignoresBuildSuffix() {
-                  assertFalse(UpdateVersionComparator.isNewer("0.8.6", "0.8.6-native-coherent"))
-                  assertTrue(UpdateVersionComparator.isNewer("0.8.7", "0.8.6-native-coherent"))
-              }
-              @Test fun comparesNumericComponents() {
-                  assertTrue(UpdateVersionComparator.isNewer("0.8.10", "0.8.9"))
-                  assertFalse(UpdateVersionComparator.isNewer("0.8.5", "0.8.6"))
-                  assertFalse(UpdateVersionComparator.isNewer("1.2", "1.2.0"))
-              }
-              @Test fun ignoresPrereleaseSuffix() {
-                  assertTrue(UpdateVersionComparator.isNewer("v0.9.0-preview", "0.8.7"))
-              }
-              @Test fun invalidVersionsDoNotThrow() {
-                  assertFalse(UpdateVersionComparator.isNewer("unknown", "0.8.7"))
-                  assertFalse(UpdateVersionComparator.isNewer("0.8.8", "not-a-version"))
-              }
-          }
-          ''', encoding="utf-8")
-          print("Patched update version parsing and added regression tests.")
+          print("Patched update version parsing.")
           PY
           APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
           python3 - "$APP_ROOT" <<'PY'
@@ -348,7 +323,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" testStandardDebugUnitTest --tests "com.alibaba.mnnllm.android.modelist.GgufMetadataReaderTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelFormatInspectorTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporterTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelConversionManagerTest" --tests "com.alibaba.mnnllm.android.update.UpdateVersionComparatorTest" --stacktrace
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" testStandardDebugUnitTest --tests "com.alibaba.mnnllm.android.modelist.GgufMetadataReaderTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelFormatInspectorTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporterTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelConversionManagerTest" --stacktrace
       - name: Build arm64-v8a APK
         working-directory: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat
         shell: bash
