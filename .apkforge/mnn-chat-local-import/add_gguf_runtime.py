@@ -529,25 +529,62 @@ object LocalGgufModelImporter {
      * Validate the complete GGUF metadata/tensor header immediately after copying.
      * A provider that ends a stream early must never leave a broken entry in the model library.
      */
+    /**
+     * Check the fixed GGUF preamble only. The native llama.cpp loader is the authoritative
+     * validator for the full metadata and tensor table. The lightweight Kotlin preview parser
+     * must not reject a valid GGUF merely because it encounters a metadata encoding it does not
+     * yet understand.
+     */
     private fun validateGgufHeader(file: File, expectedSize: Long = -1L) {
         val actualSize = file.length()
-        val result = file.inputStream().buffered().use { stream ->
-            GgufMetadataReader.inspect(stream)
+        if (!file.isFile || actualSize < 24L) {
+            throw IOException("GGUF 文件头不完整：本地文件仅 $actualSize 字节。")
         }
-        when (result) {
-            is GgufMetadataReader.Result.Success -> {
-                if (result.metadata.tensorCount <= 0L) {
-                    throw IOException("GGUF 文件没有模型张量：本地副本 $actualSize 字节。")
-                }
-            }
-            is GgufMetadataReader.Result.Failure -> {
-                val sourceInfo = if (expectedSize > 0L) "；来源报告大小 $expectedSize 字节" else "；来源未提供可靠文件大小"
-                throw IOException(
-                    "GGUF 导入后完整性校验失败：本地副本 $actualSize 字节$sourceInfo；" +
-                        "原因：${result.reason}。文件未加入模型库，请重新下载完整模型后再导入。"
-                )
+        if (expectedSize > 0L && actualSize != expectedSize) {
+            throw IOException(
+                "GGUF 复制长度不匹配：来源报告 $expectedSize 字节，本地副本 $actualSize 字节。"
+            )
+        }
+
+        val header = ByteArray(24)
+        file.inputStream().use { input ->
+            var offset = 0
+            while (offset < header.size) {
+                val count = input.read(header, offset, header.size - offset)
+                if (count < 0) throw IOException("GGUF 固定文件头被截断。")
+                if (count == 0) continue
+                offset += count
             }
         }
+        if (!header.copyOfRange(0, 4).contentEquals(byteArrayOf(0x47, 0x47, 0x55, 0x46))) {
+            throw IOException("文件头不是 GGUF 格式。")
+        }
+
+        fun readU32(offset: Int): Long {
+            var value = 0L
+            repeat(4) { index ->
+                value = value or ((header[offset + index].toLong() and 0xffL) shl (index * 8))
+            }
+            return value
+        }
+        fun readU64(offset: Int): Long {
+            var value = 0L
+            repeat(8) { index ->
+                value = value or ((header[offset + index].toLong() and 0xffL) shl (index * 8))
+            }
+            if (value < 0L) throw IOException("GGUF 文件长度字段超出当前设备可处理范围。")
+            return value
+        }
+
+        val version = readU32(4)
+        if (version !in 2L..3L) {
+            throw IOException("GGUF 版本 $version 暂不支持；当前支持版本 2 和 3。")
+        }
+        val tensorCount = readU64(8)
+        if (tensorCount <= 0L) {
+            throw IOException("GGUF 文件未包含有效模型张量：本地副本 $actualSize 字节。")
+        }
+        // Full metadata/tensor parsing is intentionally deferred to llama.cpp at load time.
     }
 
     private fun copyChecked(
@@ -635,26 +672,28 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import java.io.File
 
-class GgufChatActivity : AppCompatActivity() {
-    companion object { const val EXTRA_MODEL_PATH = "com.alibaba.mnnllm.android.EXTRA_GGUF_MODEL_PATH" }
-    private lateinit var status: TextView
-    private lateinit var transcript: TextView
-    private lateinit var transcriptScroll: ScrollView
-    private lateinit var input: EditText
-    private lateinit var send: Button
-    private lateinit var stop: Button
-    private var engine: InferenceEngine? = null
-    private var generation: Job? = null
-    private var ready = false
-    private var metadataSummary = ""
-    private var modelHeader = ""
-    private var historyFile: File? = null
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val path = intent.getStringExtra(EXTRA_MODEL_PATH)
-        if (path.isNullOrBlank() || !File(path).isFile) { finish(); return }
-        val modelFile = File(path)
+class GgufChatActivity :                val metadataResult = withContext(Dispatchers.IO) {
+                    modelFile.inputStream().buffered().use { stream ->
+                        GgufMetadataReader.inspect(stream)
+                    }
+                }
+                val metadata = (metadataResult as? GgufMetadataReader.Result.Success)?.metadata
+                if (metadata != null) {
+                    metadataSummary = "GGUF 版本：" + metadata.version +
+                        "\n架构：" + (metadata.architecture ?: "未知") +
+                        "\n张量：" + metadata.tensorCount +
+                        "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
+                        "\n文件大小：" + formatSize(modelFile.length())
+                    status.text = "快速预检通过，正在启动原生推理引擎…"
+                } else {
+                    val reason = (metadataResult as? GgufMetadataReader.Result.Failure)?.reason
+                        ?: "未知元数据解析错误"
+                    metadataSummary = "Android 快速元数据预检未能完整识别：$reason" +
+                        "\n文件大小：" + formatSize(modelFile.length()) +
+                        "\n正在交由原生 llama.cpp 引擎进行完整验证。"
+                    status.text = "快速预检未完全识别，正在由原生引擎验证…"
+                }
+      val modelFile = File(path)
         historyFile = GgufChatHistoryStore.fileFor(filesDir, modelFile)
         buildUi(modelFile.name)
         lifecycleScope.launch {
@@ -696,13 +735,20 @@ class GgufChatActivity : AppCompatActivity() {
                 ready = true
                 status.text = "模型已加载，可以开始对话"
                 send.isEnabled = true
-                modelHeader = "模型已就绪：" + modelFile.name +
-                    "\n文件大小：" + formatSize(modelFile.length()) +
-                    "\nGGUF 版本：" + metadata.version +
-                    "\n架构：" + (metadata.architecture ?: "未知") +
-                    "\n张量：" + metadata.tensorCount +
-                    "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
-                    "\n\n"
+                modelHeader = buildString {
+                    append("模型已就绪：").append(modelFile.name)
+                    append("\n文件大小：").append(formatSize(modelFile.length()))
+                    if (metadata != null) {
+                        append("\nGGUF 版本：").append(metadata.version)
+                        append("\n架构：").append(metadata.architecture ?: "未知")
+                        append("\n张量：").append(metadata.tensorCount)
+                        append("\n量化类型：").append(metadata.tensorTypes.sorted().joinToString(", "))
+                    } else {
+                        append("\n原生 llama.cpp 已成功加载该模型。")
+                        append("\nAndroid 快速预检未识别部分元数据，但原生加载已通过。")
+                    }
+                    append("\n\n")
+                }
                 if (transcript.text.isNullOrEmpty()) transcript.append(modelHeader)
                 persistHistory()
                 scrollToBottom()
