@@ -6,18 +6,16 @@ import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 /**
- * Reads only the GGUF header and tensor descriptors. Tensor payload bytes are never loaded.
+ * Reads GGUF metadata and tensor descriptors without loading tensor payloads.
  *
- * The reader is deliberately bounded because model files are user-controlled and may be very
- * large. It reports formats that the current MNN GGUF weight mapper cannot consume separately
- * from formats that are understood but still require an MNN template/native conversion backend.
+ * Metadata is streamed from the input and is bounded by the actual stream length (EOF), not by
+ * an arbitrary total header-size cap. Unneeded long strings are skipped through a small buffer.
+ * This supports large tokenizer vocabularies while avoiding allocations proportional to model size.
  */
 object GgufMetadataReader {
-    private const val MAX_HEADER_BYTES = 64L * 1024L * 1024L
-    private const val MAX_STRING_BYTES = 4L * 1024L * 1024L
-    private const val MAX_METADATA_ITEMS = 1_000_000L
-    private const val MAX_ARRAY_ITEMS = 1_000_000L
-    private const val MAX_TENSORS = 1_000_000L
+    // Strings larger than this are streamed past instead of decoded into a Kotlin String.
+    // It is not a model/header size limit: large metadata values are still fully accepted.
+    private const val MAX_DECODED_STRING_BYTES = 4L * 1024L * 1024L
     private const val MAX_DIMENSIONS = 4
 
     // Verified against the current upstream MNN transformers/llm/export/gguf2mnn.py mapper.
@@ -108,15 +106,13 @@ object GgufMetadataReader {
         }
         val tensorCount = reader.readU64()
         val metadataCount = reader.readU64()
-        if (tensorCount > MAX_TENSORS) throw IOException("GGUF 张量数量异常，已停止读取。")
-        if (metadataCount > MAX_METADATA_ITEMS) throw IOException("GGUF 元数据条目过多，已停止读取。")
-
         var architecture: String? = null
         var modelName: String? = null
         var tokenizerModel: String? = null
         var blockCount: Long? = null
 
-        repeat(metadataCount.toInt()) {
+        var metadataIndex = 0L
+        while (metadataIndex < metadataCount) {
             val key = reader.readString()
             val valueType = reader.readU32()
             // Only decode the small metadata values needed by the readiness screen.
@@ -125,7 +121,7 @@ object GgufMetadataReader {
             val needsValue = key == "general.architecture" ||
                 key == "general.name" ||
                 key == "tokenizer.ggml.model" ||
-                key.endsWith(".block_count")
+                key?.endsWith(".block_count") == true
             val value = if (needsValue) reader.readMetadataValue(valueType) else {
                 reader.skipMetadataValue(valueType)
                 null
@@ -134,27 +130,30 @@ object GgufMetadataReader {
                 key == "general.architecture" -> architecture = value as? String
                 key == "general.name" -> modelName = value as? String
                 key == "tokenizer.ggml.model" -> tokenizerModel = value as? String
-                key.endsWith(".block_count") -> blockCount = value as? Long
+                key?.endsWith(".block_count") == true -> blockCount = value as? Long
             }
+            metadataIndex++
         }
 
         val typeIds = linkedSetOf<Int>()
         val tensorNames = mutableListOf<String>()
-        repeat(tensorCount.toInt()) {
+        var tensorIndex = 0L
+        while (tensorIndex < tensorCount) {
             val tensorName = reader.readString()
             val dimensionCount = reader.readU32()
             if (dimensionCount !in 1L..MAX_DIMENSIONS.toLong()) {
-                throw IOException("GGUF 张量维度数量异常：$tensorName")
+                throw IOException("GGUF 张量维度数量异常：${tensorName ?: "未知张量"}")
             }
             repeat(dimensionCount.toInt()) {
                 val dimension = reader.readU64()
-                if (dimension <= 0L) throw IOException("GGUF 张量维度无效：$tensorName")
+                if (dimension <= 0L) throw IOException("GGUF 张量维度无效：${tensorName ?: "未知张量"}")
             }
             val typeIdLong = reader.readU32()
             if (typeIdLong > Int.MAX_VALUE) throw IOException("GGUF 张量类型编号无效：$tensorName")
             typeIds += typeIdLong.toInt()
             reader.readU64() // relative offset into the tensor payload; payload remains unread
-            if (tensorNames.size < 32) tensorNames += tensorName
+            if (tensorNames.size < 32 && tensorName != null) tensorNames += tensorName
+            tensorIndex++
         }
 
         val typeNames = typeIds.map { tensorTypeNames[it] ?: "GGML_TYPE_$it" }.toSet()
@@ -197,9 +196,14 @@ object GgufMetadataReader {
             return value
         }
 
-        fun readString(): String {
+        fun readString(): String? {
             val length = readU64()
-            if (length > MAX_STRING_BYTES) throw IOException("GGUF 字符串长度异常。")
+            if (length > MAX_DECODED_STRING_BYTES) {
+                // Keys and tensor names are normally short. If an unusual model contains a very
+                // long one, skip it instead of rejecting the model or allocating a huge String.
+                skipFully(length)
+                return null
+            }
             return String(readBytes(length.toInt()), StandardCharsets.UTF_8)
         }
 
@@ -251,9 +255,12 @@ object GgufMetadataReader {
         private fun skipMetadataArray() {
             val elementType = readU32()
             val count = readU64()
-            if (count > MAX_ARRAY_ITEMS) throw IOException("GGUF 元数据数组过大。")
             if (elementType == 9L) throw IOException("GGUF 不支持嵌套元数据数组。")
-            repeat(count.toInt()) { skipMetadataElement(elementType) }
+            var index = 0L
+            while (index < count) {
+                skipMetadataElement(elementType)
+                index++
+            }
         }
 
         private fun skipMetadataElement(type: Long) {
@@ -295,8 +302,10 @@ object GgufMetadataReader {
         }
 
         private fun ensureWithinLimit(additional: Long) {
-            if (additional < 0L || consumed > MAX_HEADER_BYTES - additional) {
-                throw IOException("GGUF 元数据超过 64 MB 安全读取上限。")
+            // No fixed header-size ceiling: the real InputStream length is the boundary.
+            // Keep arithmetic overflow checks before advancing the consumed-byte counter.
+            if (additional < 0L || consumed > Long.MAX_VALUE - additional) {
+                throw IOException("GGUF 文件偏移量溢出。")
             }
         }
     }
