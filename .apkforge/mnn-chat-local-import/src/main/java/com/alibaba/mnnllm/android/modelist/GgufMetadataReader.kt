@@ -119,7 +119,17 @@ object GgufMetadataReader {
         repeat(metadataCount.toInt()) {
             val key = reader.readString()
             val valueType = reader.readU32()
-            val value = reader.readMetadataValue(valueType)
+            // Only decode the small metadata values needed by the readiness screen.
+            // Token lists, chat templates and other user-controlled strings/arrays are streamed
+            // past without allocating large Kotlin Strings or imposing the 4 MiB decode cap.
+            val needsValue = key == "general.architecture" ||
+                key == "general.name" ||
+                key == "tokenizer.ggml.model" ||
+                key.endsWith(".block_count")
+            val value = if (needsValue) reader.readMetadataValue(valueType) else {
+                reader.skipMetadataValue(valueType)
+                null
+            }
             when {
                 key == "general.architecture" -> architecture = value as? String
                 key == "general.name" -> modelName = value as? String
@@ -216,11 +226,7 @@ object GgufMetadataReader {
                 6L -> readBytes(4)
                 8L -> readString()
                 9L -> {
-                    val elementType = readU32()
-                    val count = readU64()
-                    if (count > MAX_ARRAY_ITEMS) throw IOException("GGUF 元数据数组过大。")
-                    if (elementType == 9L) throw IOException("GGUF 不支持嵌套元数据数组。")
-                    repeat(count.toInt()) { skipMetadataElement(elementType) }
+                    skipMetadataArray()
                     null
                 }
                 10L, 11L -> readU64()
@@ -229,15 +235,36 @@ object GgufMetadataReader {
             }
         }
 
+        /** Skips an arbitrary metadata value without materializing large strings or arrays. */
+        fun skipMetadataValue(type: Long) {
+            when (type) {
+                0L, 1L, 7L -> skipFully(1)
+                2L, 3L -> skipFully(2)
+                4L, 5L, 6L -> skipFully(4)
+                8L -> skipFully(readU64())
+                9L -> skipMetadataArray()
+                10L, 11L, 12L -> skipFully(8)
+                else -> throw IOException("GGUF 元数据类型 $type 未知。")
+            }
+        }
+
+        private fun skipMetadataArray() {
+            val elementType = readU32()
+            val count = readU64()
+            if (count > MAX_ARRAY_ITEMS) throw IOException("GGUF 元数据数组过大。")
+            if (elementType == 9L) throw IOException("GGUF 不支持嵌套元数据数组。")
+            repeat(count.toInt()) { skipMetadataElement(elementType) }
+        }
+
         private fun skipMetadataElement(type: Long) {
             when (type) {
                 0L, 1L, 7L -> skipFully(1)
                 2L, 3L -> skipFully(2)
                 4L, 5L, 6L -> skipFully(4)
                 8L -> {
-                    val length = readU64()
-                    if (length > MAX_STRING_BYTES) throw IOException("GGUF 元数据字符串过长。")
-                    skipFully(length)
+                    // Array string values can contain long tokenizer/chat-template entries.
+                    // Stream-skip them and let the aggregate 64 MiB header limit bound I/O.
+                    skipFully(readU64())
                 }
                 10L, 11L, 12L -> skipFully(8)
                 else -> throw IOException("GGUF 元数据数组元素类型 $type 不受支持。")
