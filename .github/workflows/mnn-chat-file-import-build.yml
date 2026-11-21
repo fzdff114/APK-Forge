@@ -1,4 +1,4 @@
-name: Build MNN Chat with local file-manager model import
+name: Build MNN Chat 0.8.7 Java crash fix
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.8.6 (arm64-v8a)
+    name: Build MNN Chat 0.8.7 (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -79,13 +79,98 @@ jobs:
           import sys
 
           root = Path(sys.argv[1])
+          checker = root / "app/src/main/java/com/alibaba/mnnllm/android/update/UpdateChecker.kt"
+          source = checker.read_text(encoding="utf-8")
+          start = source.index("    private fun isNewerVersion(")
+          end = source.index("    private fun showUpdateDialog(", start)
+          replacement = '''    private fun isNewerVersion(latest: String, current: String): Boolean {
+                  return UpdateVersionComparator.isNewer(latest, current)
+              }
+
+          '''
+          source = source[:start] + replacement + source[end:]
+          old_catch = "} catch (e: JSONException) {"
+          if source.count(old_catch) != 1:
+              raise SystemExit("Expected exactly one update-response JSONException catch")
+          source = source.replace(old_catch, "} catch (e: Exception) {", 1)
+          source = source.replace(
+              'Log.e(TAG, "check version error", e)',
+              'Log.e(TAG, "Update response processing failed; safely skipping update check", e)',
+              1
+          )
+          checker.write_text(source, encoding="utf-8")
+
+          code_dir = root / "app/src/main/java/com/alibaba/mnnllm/android/update"
+          code_dir.mkdir(parents=True, exist_ok=True)
+          (code_dir / "UpdateVersionComparator.kt").write_text('''package com.alibaba.mnnllm.android.update
+
+/** Numeric version comparison that safely ignores optional display/build suffixes. */
+internal object UpdateVersionComparator {
+    fun isNewer(latest: String, current: String): Boolean {
+        val latestParts = parseVersion(latest) ?: return false
+        val currentParts = parseVersion(current) ?: return false
+        val length = maxOf(latestParts.size, currentParts.size)
+        for (index in 0 until length) {
+            val latestNumber = latestParts.getOrElse(index) { 0 }
+            val currentNumber = currentParts.getOrElse(index) { 0 }
+            if (latestNumber > currentNumber) return true
+            if (latestNumber < currentNumber) return false
+        }
+        return false
+    }
+
+    private fun parseVersion(value: String): List<Int>? {
+        val numericVersion = Regex("""^\\s*[vV]?(\\d+(?:\\.\\d+)*)""")
+            .find(value)?.groupValues?.getOrNull(1) ?: return null
+        return numericVersion.split('.').map { part ->
+            part.toIntOrNull() ?: return null
+        }
+    }
+}
+''', encoding="utf-8")
+
+          test_dir = root / "app/src/test/java/com/alibaba/mnnllm/android/update"
+          test_dir.mkdir(parents=True, exist_ok=True)
+          (test_dir / "UpdateVersionComparatorTest.kt").write_text('''package com.alibaba.mnnllm.android.update
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class UpdateVersionComparatorTest {
+    @Test fun ignoresBuildSuffix() {
+        assertFalse(UpdateVersionComparator.isNewer("0.8.6", "0.8.6-native-coherent"))
+        assertTrue(UpdateVersionComparator.isNewer("0.8.7", "0.8.6-native-coherent"))
+    }
+    @Test fun comparesNumericComponents() {
+        assertTrue(UpdateVersionComparator.isNewer("0.8.10", "0.8.9"))
+        assertFalse(UpdateVersionComparator.isNewer("0.8.5", "0.8.6"))
+        assertFalse(UpdateVersionComparator.isNewer("1.2", "1.2.0"))
+    }
+    @Test fun ignoresPrereleaseSuffix() {
+        assertTrue(UpdateVersionComparator.isNewer("v0.9.0-preview", "0.8.7"))
+    }
+    @Test fun invalidVersionsDoNotThrow() {
+        assertFalse(UpdateVersionComparator.isNewer("unknown", "0.8.7"))
+        assertFalse(UpdateVersionComparator.isNewer("0.8.8", "not-a-version"))
+    }
+}
+''', encoding="utf-8")
+          print("Patched update version parsing and added regression tests.")
+          PY
+          APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
+          python3 - "$APP_ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+
+          root = Path(sys.argv[1])
           gradle = root / "app/build.gradle"
           source = gradle.read_text(encoding="utf-8")
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
                'applicationId "com.alibaba.mnnllm.android.localimport"'),
-              ("versionCode 830", "versionCode 834"),
-              ('versionName "0.8.3"', 'versionName "0.8.6-native-coherent"'),
+              ("versionCode 830", "versionCode 835"),
+              ('versionName "0.8.3"', 'versionName "0.8.7"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
@@ -263,7 +348,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" testStandardDebugUnitTest --tests "com.alibaba.mnnllm.android.modelist.GgufMetadataReaderTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelFormatInspectorTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporterTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelConversionManagerTest" --stacktrace
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx5g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" testStandardDebugUnitTest --tests "com.alibaba.mnnllm.android.modelist.GgufMetadataReaderTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelFormatInspectorTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporterTest" --tests "com.alibaba.mnnllm.android.modelist.LocalModelConversionManagerTest" --tests "com.alibaba.mnnllm.android.update.UpdateVersionComparatorTest" --stacktrace
       - name: Build arm64-v8a APK
         working-directory: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat
         shell: bash
@@ -276,7 +361,7 @@ jobs:
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
           sha256sum "$APK"
-          echo "### MNN Chat 0.8.6 native-coherent build" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.8.7 Java crash fix" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK: \`$APK\`" >> "$GITHUB_STEP_SUMMARY"
@@ -286,7 +371,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.8.6-native-coherent-arm64
+          name: mnn-chat-0.8.7-java-crash-fix-arm64
           path: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
