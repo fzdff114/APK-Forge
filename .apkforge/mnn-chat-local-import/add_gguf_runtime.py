@@ -96,7 +96,8 @@ new_model_load = r'''    auto *model = llama_model_load_from_file(model_path, mo
                 std::lock_guard<std::mutex> guard(g_load_log_mutex);
                 g_load_log.append("\nAndroid compatibility fallback: retrying with use_mmap=false.\n");
             }
-            model_params.use_mmap = false;
+            model_params.load_mode = LLAMA_LOAD_MODE_NONE;
+            model_params.lazy_mode = LLAMA_LAZY_MODE_OFF;
             model = llama_model_load_from_file(model_path, model_params);
         }
     }
