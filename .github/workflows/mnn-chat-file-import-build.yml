@@ -194,9 +194,10 @@ jobs:
               gradle_text = gradle.read_text(encoding="utf-8")
               anchor = "    repositories {\n        google()\n        mavenCentral()\n    }"
               mirrored = """    repositories {
-                          maven { url 'https://maven.aliyun.com/repository/public' }
-                          maven { url 'https://repo.huaweicloud.com/repository/maven/' }
                           google()
+                          maven { url 'https://repo.huaweicloud.com/repository/maven/' }
+                          maven { url 'https://maven.aliyun.com/repository/google' }
+                          maven { url 'https://maven.aliyun.com/repository/central' }
                           mavenCentral()
                       }"""
               if gradle_text.count(anchor) != 1:
@@ -250,11 +251,11 @@ jobs:
           anchor = "repositories {\n        mavenCentral()"
           replacement = """repositories {
                   gradlePluginPortal()
-                  maven { url 'https://maven.aliyun.com/repository/google' }
-                  maven { url 'https://maven.aliyun.com/repository/central' }
-                  maven { url 'https://maven.aliyun.com/repository/public' }
+                  google()
                   maven { url 'https://repo.huaweicloud.com/repository/maven/' }
+                  maven { url 'https://maven.aliyun.com/repository/google' }
                   maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+                  maven { url 'https://maven.aliyun.com/repository/central' }
                   mavenCentral()"""
           if source.count(anchor) != 2:
               raise SystemExit(
