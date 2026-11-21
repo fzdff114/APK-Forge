@@ -20,6 +20,12 @@ class GgufChatHistoryStoreTest {
             GgufChatHistoryStore.write(history, transcript)
 
             assertEquals(transcript, GgufChatHistoryStore.read(history))
+
+            val replacement = transcript + "你：第二条\\n助手：已保存\\n"
+            GgufChatHistoryStore.write(history, replacement)
+            assertEquals(replacement, GgufChatHistoryStore.read(history))
+            assertTrue(history.parentFile!!.listFiles()!!.none { it.name.endsWith(".tmp") })
+
             assertTrue(GgufChatHistoryStore.clear(history))
             assertEquals("", GgufChatHistoryStore.read(history))
         } finally {

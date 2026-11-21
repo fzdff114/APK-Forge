@@ -266,7 +266,13 @@ object LocalGgufModelImporter {
             val primaryName: String,
             val expectedSizes: List<Long>
         )
-        val groups = found.groupBy { it.second.substringBeforeLast('/', "") }.toSortedMap()
+        val groups = found.groupBy { (document, relativePath) ->
+            val name = document.name ?: throw IOException("GGUF 文件缺少名称。")
+            val parent = relativePath.substringBeforeLast('/', "")
+            val shard = shardPattern.find(name)
+            val modelName = if (shard != null) name.removeRange(shard.range) else name
+            parent + "\u0000" + modelName
+        }.toSortedMap()
         val plans = groups.values.map { group ->
             val files = group.sortedBy { it.first.name?.lowercase() ?: "" }
             val names = files.map { it.first.name ?: throw IOException("GGUF 文件缺少名称。") }

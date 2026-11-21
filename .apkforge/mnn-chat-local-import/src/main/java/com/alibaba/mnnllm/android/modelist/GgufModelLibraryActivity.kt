@@ -176,10 +176,15 @@ class GgufModelLibraryActivity : AppCompatActivity() {
             .setPositiveButton("删除") { _, _ ->
                 lifecycleScope.launch {
                     try {
-                        withContext(Dispatchers.IO) {
+                        val historyCleared = withContext(Dispatchers.IO) {
                             LocalGgufModelLibrary.delete(modelRoot(), entry.folder)
+                            GgufChatHistoryStore.clear(
+                                GgufChatHistoryStore.fileFor(filesDir, entry.primaryFile)
+                            )
                         }
-                        Toast.makeText(this@GgufModelLibraryActivity, "模型已删除。", Toast.LENGTH_SHORT).show()
+                        val message = if (historyCleared) "模型及其聊天记录已删除。"
+                            else "模型已删除，但聊天记录文件未能清理。"
+                        Toast.makeText(this@GgufModelLibraryActivity, message, Toast.LENGTH_SHORT).show()
                         refreshModels()
                     } catch (e: Exception) {
                         Toast.makeText(
