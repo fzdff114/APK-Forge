@@ -348,10 +348,6 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt"),
         Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufChatHistoryStore.kt":
             Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufChatHistoryStore.kt"),
-        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt":
-            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt"),
-        Path(__file__).parent / "src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt":
-            Path("apps/Android/MnnLlmChat/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufModelLibraryActivity.kt"),
         Path(__file__).parent / "tests/LocalModelConversionManagerTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelConversionManagerTest.kt"),
         Path(__file__).parent / "tests/LocalModelFormatInspectorTest.kt":
