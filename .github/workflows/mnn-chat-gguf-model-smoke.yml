@@ -129,6 +129,29 @@ jobs:
           echo "DEEPSEEK_MODEL_FILE=$MODEL" >> "$GITHUB_ENV"
           echo "DEEPSEEK_EXPECTED_SHA=$EXPECTED_SHA" >> "$GITHUB_ENV"
 
+      - name: Run the exact Android Kotlin GGUF reader against the real DeepSeek file
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="2.2.0"
+          ARCHIVE="$RUNNER_TEMP/kotlin-compiler.zip"
+          DIST="$RUNNER_TEMP/kotlin-dist"
+          curl --fail --location --retry 4 --retry-all-errors \
+            "https://github.com/JetBrains/kotlin/releases/download/v${VERSION}/kotlin-compiler-${VERSION}.zip" \
+            --output "$ARCHIVE"
+          mkdir -p "$DIST"
+          unzip -q "$ARCHIVE" -d "$DIST"
+          KOTLINC="$DIST/kotlinc/bin/kotlinc"
+          READER="$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/src/main/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReader.kt"
+          AUDIT="$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/tests/GgufMetadataAuditMain.kt"
+          test -x "$KOTLINC"
+          java -version
+          "$KOTLINC" "$READER" "$AUDIT" -include-runtime -d "$RUNNER_TEMP/gguf-reader-audit.jar"
+          java -jar "$RUNNER_TEMP/gguf-reader-audit.jar" "$DEEPSEEK_MODEL_FILE"
+          echo "## Android Kotlin GGUF reader passed on actual DeepSeek Q2_K file" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Bytes: $(stat -c '%s' "$DEEPSEEK_MODEL_FILE")" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-256: $DEEPSEEK_EXPECTED_SHA" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Load the matching DeepSeek Q2_K GGUF and generate a short answer
         shell: bash
         run: |
