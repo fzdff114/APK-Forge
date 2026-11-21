@@ -154,6 +154,58 @@ jobs:
           fi
           echo "Sherpa JNI will be fetched by downloadSherpaMnn.gradle (16KB-compatible package)."
 
+      - name: Download and verify 16KB-compatible Sherpa JNI dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_ROOT="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat"
+          ZIP="$RUNNER_TEMP/libsherpa-mnn-jni-16k.zip"
+          OUTPUT="$APP_ROOT/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$OUTPUT"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 300 \
+            "https://meta.alicdn.com/data/mnn/libs/libsherpa-mnn-jni-16k.zip" \
+            --output "$ZIP"
+          test -s "$ZIP" || { echo "::error::Sherpa JNI archive is empty"; exit 1; }
+          python3 - "$ZIP" "$OUTPUT" <<'PY'
+          from pathlib import Path, PurePosixPath
+          import sys
+          import zipfile
+
+          archive = Path(sys.argv[1])
+          output = Path(sys.argv[2])
+          with zipfile.ZipFile(archive) as bundle:
+              bad_member = bundle.testzip()
+              if bad_member:
+                  raise SystemExit(f"Corrupt Sherpa JNI archive member: {bad_member}")
+              native_members = [
+                  item for item in bundle.infolist()
+                  if not item.is_dir() and PurePosixPath(item.filename).suffix == ".so"
+              ]
+              matches = [item for item in native_members
+                         if PurePosixPath(item.filename).name == "libsherpa-mnn-jni.so"]
+              if len(matches) != 1:
+                  raise SystemExit(
+                      "Expected exactly one libsherpa-mnn-jni.so in archive; found "
+                      + str(len(matches)) + "; members="
+                      + ", ".join(item.filename for item in native_members)
+                  )
+              seen = set()
+              for item in native_members:
+                  name = PurePosixPath(item.filename).name
+                  if name in seen:
+                      raise SystemExit(f"Duplicate native library basename in Sherpa ZIP: {name}")
+                  seen.add(name)
+                  target = output / name
+                  target.write_bytes(bundle.read(item))
+                  if target.stat().st_size == 0:
+                      raise SystemExit(f"Extracted an empty native library: {name}")
+                  print(f"Installed {target} ({target.stat().st_size:,} bytes)")
+          PY
+          test -s "$OUTPUT/libsherpa-mnn-jni.so"
+          sha256sum "$OUTPUT"/*.so
+          echo "Sherpa JNI downloaded, ZIP-verified, and staged before Gradle."
+ 
       - name: Run Android unit tests
         working-directory: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat
         shell: bash
