@@ -72,11 +72,88 @@ jobs:
           echo "Model and projector downloads verified." >> "$GITHUB_STEP_SUMMARY"
           du -h Fara1.5-4B_IQ2_M/* >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload complete model package artifact
+      - name: Split verified model files into transferable chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="Fara1.5-4B_IQ2_M"
+          split --bytes=400M --numeric-suffixes=0 --suffix-length=2 \
+            "$OUT/Fara1.5-4B-IQ2_M.gguf" "$OUT/model.part-"
+          split --bytes=400M --numeric-suffixes=0 --suffix-length=2 \
+            "$OUT/mmproj-Fara1.5-4B-f16.gguf" "$OUT/mmproj.part-"
+          cp "$OUT/SHA256SUMS" "$OUT/README_中文.txt" "$OUT/"
+          ls -lh "$OUT"/*.part-* 
+
+      - name: Upload model chunk 01
         uses: actions/upload-artifact@v4
         with:
-          name: Fara1.5-4B-GGUF-IQ2_M-with-mmproj
-          path: Fara1.5-4B_IQ2_M/
+          name: fara-model-part-01
+          path: Fara1.5-4B_IQ2_M/model.part-00
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload model chunk 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-model-part-02
+          path: Fara1.5-4B_IQ2_M/model.part-01
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload model chunk 03
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-model-part-03
+          path: Fara1.5-4B_IQ2_M/model.part-02
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload model chunk 04
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-model-part-04
+          path: Fara1.5-4B_IQ2_M/model.part-03
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload model chunk 05
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-model-part-05
+          path: Fara1.5-4B_IQ2_M/model.part-04
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload vision projector chunk 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-mmproj-part-01
+          path: Fara1.5-4B_IQ2_M/mmproj.part-00
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload vision projector chunk 02
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-mmproj-part-02
+          path: Fara1.5-4B_IQ2_M/mmproj.part-01
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload model manifest and usage notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: fara-model-manifest
+          path: |
+            Fara1.5-4B_IQ2_M/SHA256SUMS
+            Fara1.5-4B_IQ2_M/README_中文.txt
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
