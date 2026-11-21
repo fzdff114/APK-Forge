@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 class GgufMetadataReaderTest {
@@ -45,6 +46,67 @@ class GgufMetadataReaderTest {
         assertEquals("llama", metadata.architecture)
         assertEquals(2L, metadata.tensorCount)
         assertEquals(setOf("Q4_0", "Q6_K"), metadata.tensorTypes)
+    }
+
+    @Test
+    fun acceptsMetadataHeaderLargerThan64MiBByStreamingUnneededValues() {
+        // Reproduce the failing Qwen/DeepSeek pattern without allocating a 64 MiB test array.
+        // The chat-template value is streamed through the parser's small skip buffer.
+        val longValueBytes = 64L * 1024L * 1024L + 1L
+        val prefix = ByteArrayOutputStream()
+        prefix.write(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+        writeU32(prefix, 3)
+        writeU64(prefix, 0L) // no tensor descriptors
+        writeU64(prefix, 4L) // four metadata entries
+
+        writeString(prefix, "general.architecture")
+        writeU32(prefix, 8)
+        writeString(prefix, "qwen2")
+
+        writeString(prefix, "general.name")
+        writeU32(prefix, 8)
+        writeString(prefix, "DeepSeek-R1-Distill-Qwen-1.5B")
+
+        writeString(prefix, "llama.block_count")
+        writeU32(prefix, 4)
+        writeU32(prefix, 28)
+
+        writeString(prefix, "tokenizer.chat_template")
+        writeU32(prefix, 8)
+        writeU64(prefix, longValueBytes)
+
+        val prefixInput = prefix.toByteArray().inputStream()
+        val input = object : InputStream() {
+            private var remaining = longValueBytes
+
+            override fun read(): Int {
+                val prefixByte = prefixInput.read()
+                if (prefixByte >= 0) return prefixByte
+                if (remaining <= 0L) return -1
+                remaining--
+                return 'x'.code
+            }
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (length == 0) return 0
+                val prefixCount = prefixInput.read(buffer, offset, length)
+                if (prefixCount > 0) return prefixCount
+                if (remaining <= 0L) return -1
+                val count = minOf(length.toLong(), remaining).toInt()
+                java.util.Arrays.fill(buffer, offset, offset + count, 'x'.code.toByte())
+                remaining -= count.toLong()
+                return count
+            }
+        }
+
+        val result = GgufMetadataReader.inspect(input)
+
+        assertTrue("Metadata larger than 64 MiB must be accepted when the stream is complete: $result",
+            result is GgufMetadataReader.Result.Success)
+        val metadata = (result as GgufMetadataReader.Result.Success).metadata
+        assertEquals("qwen2", metadata.architecture)
+        assertEquals("DeepSeek-R1-Distill-Qwen-1.5B", metadata.modelName)
+        assertEquals(0L, metadata.tensorCount)
     }
 
     @Test
