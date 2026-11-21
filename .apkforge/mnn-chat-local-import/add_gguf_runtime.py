@@ -672,7 +672,39 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import java.io.File
 
-class GgufChatActivity :                val metadataResult = withContext(Dispatchers.IO) {
+class GgufChatActivity : AppCompatActivity() {
+    companion object { const val EXTRA_MODEL_PATH = "com.alibaba.mnnllm.android.EXTRA_GGUF_MODEL_PATH" }
+    private lateinit var status: TextView
+    private lateinit var transcript: TextView
+    private lateinit var transcriptScroll: ScrollView
+    private lateinit var input: EditText
+    private lateinit var send: Button
+    private lateinit var stop: Button
+    private var engine: InferenceEngine? = null
+    private var generation: Job? = null
+    private var ready = false
+    private var metadataSummary = ""
+    private var modelHeader = ""
+    private var historyFile: File? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val path = intent.getStringExtra(EXTRA_MODEL_PATH)
+        if (path.isNullOrBlank() || !File(path).isFile) { finish(); return }
+        val modelFile = File(path)
+        historyFile = GgufChatHistoryStore.fileFor(filesDir, modelFile)
+        buildUi(modelFile.name)
+        lifecycleScope.launch {
+            try {
+                val saved = withContext(Dispatchers.IO) {
+                    GgufChatHistoryStore.read(historyFile ?: return@withContext "")
+                }
+                if (saved.isNotBlank()) {
+                    transcript.text = saved
+                    scrollToBottom()
+                }
+                status.text = "正在校验 GGUF 元数据…"
+                val metadataResult = withContext(Dispatchers.IO) {
                     modelFile.inputStream().buffered().use { stream ->
                         GgufMetadataReader.inspect(stream)
                     }
@@ -688,38 +720,11 @@ class GgufChatActivity :                val metadataResult = withContext(Dispatc
                 } else {
                     val reason = (metadataResult as? GgufMetadataReader.Result.Failure)?.reason
                         ?: "未知元数据解析错误"
-                    metadataSummary = "Android 快速元数据预检未能完整识别：$reason" +
+                    metadataSummary = "Android 快速元数据预检未能完整识别：" + reason +
                         "\n文件大小：" + formatSize(modelFile.length()) +
                         "\n正在交由原生 llama.cpp 引擎进行完整验证。"
                     status.text = "快速预检未完全识别，正在由原生引擎验证…"
                 }
-      val modelFile = File(path)
-        historyFile = GgufChatHistoryStore.fileFor(filesDir, modelFile)
-        buildUi(modelFile.name)
-        lifecycleScope.launch {
-            try {
-                val saved = withContext(Dispatchers.IO) {
-                    GgufChatHistoryStore.read(historyFile ?: return@withContext "")
-                }
-                if (saved.isNotBlank()) {
-                    transcript.text = saved
-                    scrollToBottom()
-                }
-                status.text = "正在校验 GGUF 元数据…"
-                val metadata = withContext(Dispatchers.IO) {
-                    modelFile.inputStream().buffered().use { stream ->
-                        when (val result = GgufMetadataReader.inspect(stream)) {
-                            is GgufMetadataReader.Result.Success -> result.metadata
-                            is GgufMetadataReader.Result.Failure -> throw java.io.IOException(result.reason)
-                        }
-                    }
-                }
-                metadataSummary = "GGUF 版本：" + metadata.version +
-                    "\n架构：" + (metadata.architecture ?: "未知") +
-                    "\n张量：" + metadata.tensorCount +
-                    "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
-                    "\n文件大小：" + formatSize(modelFile.length())
-                status.text = "GGUF 元数据校验通过，正在启动推理引擎…"
                 val modelEngine = withContext(Dispatchers.Default) {
                     AiChat.getInferenceEngine(applicationContext)
                 }
