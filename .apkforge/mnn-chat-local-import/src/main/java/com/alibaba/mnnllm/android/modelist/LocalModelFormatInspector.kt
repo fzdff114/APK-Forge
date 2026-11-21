@@ -1,5 +1,6 @@
 package com.alibaba.mnnllm.android.modelist
 
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
@@ -21,20 +22,78 @@ object LocalModelFormatInspector {
         val format: Format,
         val state: State,
         val displayName: String,
-        val details: String
+        val details: String,
+        val architecture: String? = null,
+        val tensorTypes: Set<String> = emptySet(),
+        val unsupportedTensorTypes: Set<String> = emptySet()
     )
 
     data class TemplateCheck(
         val valid: Boolean,
         val missing: List<String>,
-        val details: String
+        val details: String,
+        val architecture: String? = null
     )
 
     private val shardReference = Regex("\"([^\"]+\\.safetensors)\"")
+    private val modelTypePattern = Regex("\\\"model_type\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"")
     private val tokenizerFiles = setOf(
         "tokenizer.mtok", "tokenizer.txt", "tokenizer.json",
         "tokenizer.model", "tokenizer_config.json", "spiece.model", "vocab.json", "vocab.txt"
     )
+
+    /**
+     * Reads GGUF metadata/tensor descriptors only. It never reads the tensor payload.
+     * This produces a converter-readiness diagnostic, not a converted model.
+     */
+    fun inspectGguf(displayName: String, input: InputStream): Detection {
+        val name = displayName.substringAfterLast('/').substringAfterLast('\\')
+        return when (val result = GgufMetadataReader.inspect(input)) {
+            is GgufMetadataReader.Result.Failure ->
+                Detection(Format.GGUF, State.INVALID, name, result.reason)
+            is GgufMetadataReader.Result.Success -> {
+                val metadata = result.metadata
+                val architecture = metadata.architecture
+                if (architecture.isNullOrBlank() || metadata.tensorCount == 0L) {
+                    Detection(
+                        Format.GGUF,
+                        State.INVALID,
+                        name,
+                        "GGUF 元数据缺少 general.architecture 或模型张量。"
+                    )
+                } else {
+                    val quantTypes = metadata.tensorTypes.sorted().joinToString(", ")
+                    val unsupported = metadata.unsupportedTensorTypes
+                    val details = buildString {
+                        append("GGUF v").append(metadata.version)
+                        append("；架构：").append(architecture)
+                        metadata.modelName?.let { append("；模型：").append(it) }
+                        metadata.blockCount?.let { append("；层数：").append(it) }
+                        append("；张量：").append(metadata.tensorCount)
+                        append("；权重类型：").append(quantTypes.ifBlank { "未识别" })
+                        if (unsupported.isNotEmpty()) {
+                            append("；当前 MNN GGUF 权重映射不支持：")
+                            append(unsupported.sorted().joinToString(", "))
+                            append("。")
+                        } else {
+                            append("。")
+                        }
+                        append(" 此 APK 尚未编入 GGUF→MNN 转换后端；读取到的元数据不代表已完成转换。")
+                    }
+                    Detection(
+                        Format.GGUF,
+                        if (unsupported.isEmpty()) State.RECOGNIZED_NEEDS_TEMPLATE
+                        else State.RECOGNIZED_NOT_CONVERTIBLE_HERE,
+                        name,
+                        details,
+                        architecture = architecture,
+                        tensorTypes = metadata.tensorTypes,
+                        unsupportedTensorTypes = unsupported
+                    )
+                }
+            }
+        }
+    }
 
     fun inspectFile(displayName: String, header: ByteArray): Detection {
         val name = displayName.substringAfterLast('/').substringAfterLast('\\')
@@ -146,17 +205,19 @@ object LocalModelFormatInspector {
         return Detection(Format.UNKNOWN, State.UNKNOWN, "未知模型目录", "未找到可识别的模型文件。")
     }
 
-    fun inspectTemplate(fileNames: Set<String>): TemplateCheck {
+    fun inspectTemplate(fileNames: Set<String>, configContents: String? = null): TemplateCheck {
         val names = fileNames.map { it.replace('\\', '/').substringAfterLast('/').lowercase(Locale.ROOT) }.toSet()
         val required = mutableListOf("config.json", "llm.mnn", "llm.mnn.json", "llm_config.json")
         if (names.none { it == "tokenizer.mtok" || it == "tokenizer.txt" }) {
             required += "tokenizer.mtok 或 tokenizer.txt"
         }
         val missing = required.filter { it !in names }
+        val architecture = configContents?.let { modelTypePattern.find(it)?.groupValues?.getOrNull(1) }
         return TemplateCheck(
             valid = missing.isEmpty(),
             missing = missing,
-            details = if (missing.isEmpty()) "MNN 结构模板文件齐全。" else "模板缺少：${missing.joinToString()}。"
+            details = if (missing.isEmpty()) "MNN 结构模板文件齐全。" else "模板缺少：${missing.joinToString()}。",
+            architecture = architecture
         )
     }
 
