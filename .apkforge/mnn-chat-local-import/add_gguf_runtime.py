@@ -723,7 +723,7 @@ else()
     message(FATAL_ERROR "GGUF runtime is configured for arm64-v8a only.")
 endif()
 add_subdirectory("@D@{LLAMA_SRC}" "@D@{CMAKE_BINARY_DIR}/llama.cpp")
-add_library(ai-chat SHARED "@D@{LLAMA_SRC}/examples/llama.android/lib/src/main/cpp/ai_chat.cpp")
+add_library(ai-chat SHARED "@D@{CMAKE_CURRENT_LIST_DIR}/ai_chat.cpp")
 target_compile_definitions(ai-chat PRIVATE
     GGML_SYSTEM_ARCH=@D@{GGML_SYSTEM_ARCH}
     GGML_CPU_KLEIDIAI=$<BOOL:@D@{GGML_CPU_KLEIDIAI}>
