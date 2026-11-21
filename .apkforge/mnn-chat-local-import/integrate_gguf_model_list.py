@@ -50,7 +50,7 @@ cache_new = '''                val localItem = if (modelId.startsWith("local-ggu
 '''
 replace_once(manager, cache_old, cache_new, "GGUF model cache restoration")
 
-load_anchor = '''             // Initialize ModelMarketCache and wait for it to be ready using Flow
+load_anchor = '''            // Initialize ModelMarketCache and wait for it to be ready using Flow
 '''
 load_addition = '''             // Imported GGUF files appear in the same main list as local MNN models.
              val ggufRoot = File(context.getExternalFilesDir(null) ?: context.filesDir, "gguf_models")
