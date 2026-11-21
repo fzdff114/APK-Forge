@@ -32,6 +32,32 @@ class LocalModelConversionManagerTest {
     }
 
     @Test
+    fun rejectsGgufTensorTypesNotHandledByTheMnnWeightMapper() {
+        val unsupported = gguf.copy(
+            architecture = "llama",
+            tensorTypes = setOf("MXFP4"),
+            unsupportedTensorTypes = setOf("MXFP4")
+        )
+
+        val result = LocalModelConversionManager.inspectConversion(unsupported, validTemplate)
+
+        assertEquals(LocalModelConversionManager.Status.UNSUPPORTED_QUANTIZATION, result.status)
+        assertFalse(result.canConvert)
+        assertTrue(result.reason.contains("MXFP4"))
+    }
+
+    @Test
+    fun rejectsTemplateWithDifferentModelArchitecture() {
+        val source = gguf.copy(architecture = "qwen2")
+        val llamaTemplate = validTemplate.copy(architecture = "llama")
+
+        val result = LocalModelConversionManager.inspectConversion(source, llamaTemplate)
+
+        assertEquals(LocalModelConversionManager.Status.UNSUPPORTED_ARCHITECTURE, result.status)
+        assertFalse(result.canConvert)
+    }
+
+    @Test
     fun rejectsUnsupportedFormat() {
         val onnx = LocalModelFormatInspector.Detection(
             LocalModelFormatInspector.Format.ONNX,
