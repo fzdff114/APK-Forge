@@ -1,4 +1,4 @@
-name: Build MNN Chat 0.8.8 with local GGUF runtime
+name: Build MNN Chat 0.8.9 with GGUF Android compatibility fixes
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.8.8 GGUF runtime (arm64-v8a)
+    name: Build MNN Chat 0.8.9 GGUF runtime (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -408,7 +408,7 @@ jobs:
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
           sha256sum "$APK"
-          echo "### MNN Chat 0.8.8 with direct GGUF runtime" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.8.9 with direct GGUF runtime" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
           echo "- MNN source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- llama.cpp source commit: \`$LLAMA_CPP_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
@@ -420,7 +420,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.8.8-gguf-runtime-arm64
+          name: mnn-chat-0.8.9-gguf-runtime-arm64
           path: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
