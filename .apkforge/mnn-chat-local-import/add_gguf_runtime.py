@@ -393,14 +393,10 @@ class GgufChatActivity : AppCompatActivity() {
                     }
                 }
                 metadataSummary = "GGUF 版本：" + metadata.version +
-                    "
-架构：" + (metadata.architecture ?: "未知") +
-                    "
-张量：" + metadata.tensorCount +
-                    "
-量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
-                    "
-文件大小：" + formatSize(modelFile.length())
+                    "\n架构：" + (metadata.architecture ?: "未知") +
+                    "\n张量：" + metadata.tensorCount +
+                    "\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
+                    "\n文件大小：" + formatSize(modelFile.length())
                 status.text = "GGUF 元数据校验通过，正在启动推理引擎…"
                 val modelEngine = withContext(Dispatchers.Default) {
                     AiChat.getInferenceEngine(applicationContext)
@@ -430,12 +426,8 @@ class GgufChatActivity : AppCompatActivity() {
                 status.text = "模型加载失败，详细原因见下方"
                 if (::transcript.isInitialized) {
                     transcript.append(
-                        "模型加载失败
-" + metadataSummary + "
-异常： " +
-                            (e.message ?: e.javaClass.simpleName) + "
-
-"
+                        "模型加载失败\n" + metadataSummary + "\n异常： " +
+                            (e.message ?: e.javaClass.simpleName) + "\n\n"
                     )
                 }
             }
