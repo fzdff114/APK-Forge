@@ -677,7 +677,7 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 835", "versionCode 837"),
+    ("versionCode 835", "versionCode 838"),
     ('versionName "0.8.7"', 'versionName "0.8.9"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
@@ -741,4 +741,4 @@ target_link_libraries(ai-chat PRIVATE llama llama-common android log)
 
 print("GGUF direct Android runtime, file/folder import and chat activity integrated.")
 print("Restored exact MNN Chat label and original adaptive icon, no edition badge.")
-print("Version set to 0.8.9/code 837; coexistence applicationId retained.")
+print("Version set to 0.8.9/code 838; safe side-by-side applicationId retained.")
