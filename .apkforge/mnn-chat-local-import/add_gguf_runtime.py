@@ -15,24 +15,22 @@ def copy(src, dst):
     shutil.copy2(src, dst)
 
 copy(llama / "examples/llama.android/lib/src/main/cpp/ai_chat.cpp", cpp / "ai_chat.cpp")
-copy(llama / "examples/llama.android/lib/src/main/cpp/logging.h", cpp / "logging.h")
-logging_path = cpp / "logging.h"
-logging = logging_path.read_text()
-logging = logging.replace("if (__android_log_is_loggable(priority, tag, ANDROID_LOG_DEFAULT))", "if (priority >= ANDROID_LOG_INFO)")
-logging_path.write_text(logging)
-# The upstream helper calls __android_log_is_loggable(), an API-30 symbol. The app supports
-# API 26+, so use compile-time priority filtering to keep the native library loadable.
-logging_path = cpp / "logging.h"
-logging = logging_path.read_text(encoding="utf-8")
+upstream_logging = llama / "examples/llama.android/lib/src/main/cpp/logging.h"
+copy(upstream_logging, cpp / "logging.h")
+# ai_chat.cpp is compiled from the llama.cpp checkout, so its quoted include resolves
+# beside that source file. Patch BOTH the copied app header and the actual included header.
 old_filter = """static inline int ai_should_log(int prio) {
     return __android_log_is_loggable(prio, LOG_TAG, LOG_MIN_LEVEL);
 }"""
 new_filter = """static inline int ai_should_log(int prio) {
     return prio >= LOG_MIN_LEVEL;
 }"""
-if logging.count(old_filter) != 1:
-    raise SystemExit("Could not locate upstream Android-30 log filter")
-logging_path.write_text(logging.replace(old_filter, new_filter, 1), encoding="utf-8")
+for logging_path in (cpp / "logging.h", upstream_logging):
+    logging = logging_path.read_text(encoding="utf-8")
+    if logging.count(old_filter) != 1:
+        raise SystemExit(f"Could not locate upstream Android-30 log filter in {logging_path}")
+    logging_path.write_text(logging.replace(old_filter, new_filter, 1), encoding="utf-8")
+print("Patched the actual llama.cpp include and the mirrored app logging.h for API 26+.")
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/AiChat.kt", java / "com/arm/aichat/AiChat.kt")
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/InferenceEngine.kt", java / "com/arm/aichat/InferenceEngine.kt")
 engine_path = java / "com/arm/aichat/internal/InferenceEngineImpl.kt"
