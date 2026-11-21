@@ -435,11 +435,11 @@ jobs:
           test -s "$OUTPUT_APK"
           sha256sum "$OUTPUT_APK"
           echo "### MNN Chat 0.9.5 with verified DeepSeek import and original chat UI" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- MNN source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- llama.cpp source commit: \`$LLAMA_CPP_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Direct GGUF JNI library: \`libai-chat.so\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- APK: \`$APK\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source-matched libMNN SHA-256: $MNN_RUNTIME_SHA256" >> "$GITHUB_STEP_SUMMARY"
+          echo "- MNN source commit: $MNN_SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- llama.cpp source commit: $LLAMA_CPP_SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Direct GGUF JNI library: libai-chat.so" >> "$GITHUB_STEP_SUMMARY"
+          echo "- APK: $APK" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-256:" >> "$GITHUB_STEP_SUMMARY"
           sha256sum "$APK" >> "$GITHUB_STEP_SUMMARY"
 
@@ -447,6 +447,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mnn-chat-0.9.5-gguf-runtime-arm64
-          path: ${{ runner.temp }}/MNN_Chat_0.9.4_SideBySide_arm64.apk
+          path: ${{ runner.temp }}/MNN_Chat_0.9.5_SideBySide_arm64.apk
           if-no-files-found: error
           retention-days: 14
