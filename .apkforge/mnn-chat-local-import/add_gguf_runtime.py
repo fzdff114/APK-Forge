@@ -368,10 +368,9 @@ object LocalGgufModelImporter {
         val folder = createFolder(context, displayName)
         try {
             val target = File(folder, safeName(displayName))
-            copyChecked(
-                context, uri, target,
-                reportedSize(context, uri), cancellationSignal, onProgress
-            )
+            val sourceSize = reportedSize(context, uri)
+            copyChecked(context, uri, target, sourceSize, cancellationSignal, onProgress)
+            validateGgufHeader(target, sourceSize)
             return target
         } catch (e: Exception) {
             folder.deleteRecursively()
@@ -455,6 +454,7 @@ object LocalGgufModelImporter {
                     ) { copied, _ ->
                         onProgress?.invoke(copiedBefore + copied, totalBytes)
                     }
+                    validateGgufHeader(target, expected)
                     copiedBefore += target.length()
                 }
                 importedModels += File(folder, safeName(plan.primaryName))
@@ -491,14 +491,62 @@ object LocalGgufModelImporter {
         }
     }
 
+    /**
+     * SAF providers do not always publish OpenableColumns.SIZE. Fall back to the
+     * AssetFileDescriptor / file descriptor length so truncated copies are caught.
+     */
     private fun reportedSize(context: Context, uri: Uri): Long {
-        return try {
+        val providerSize = try {
             context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                 val index = cursor.getColumnIndex(OpenableColumns.SIZE)
                 if (cursor.moveToFirst() && index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else -1L
             } ?: -1L
         } catch (_: Exception) {
             -1L
+        }
+        if (providerSize > 0L) return providerSize
+
+        val descriptorSize = try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.length.takeIf { it > 0L } ?: descriptor.parcelFileDescriptor.statSize
+            } ?: -1L
+        } catch (_: Exception) {
+            -1L
+        }
+        if (descriptorSize > 0L) return descriptorSize
+
+        val fileDescriptorSize = try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.statSize
+            } ?: -1L
+        } catch (_: Exception) {
+            -1L
+        }
+        return fileDescriptorSize.takeIf { it > 0L } ?: -1L
+    }
+
+    /**
+     * Validate the complete GGUF metadata/tensor header immediately after copying.
+     * A provider that ends a stream early must never leave a broken entry in the model library.
+     */
+    private fun validateGgufHeader(file: File, expectedSize: Long = -1L) {
+        val actualSize = file.length()
+        val result = file.inputStream().buffered().use { stream ->
+            GgufMetadataReader.inspect(stream)
+        }
+        when (result) {
+            is GgufMetadataReader.Result.Success -> {
+                if (result.metadata.tensorCount <= 0L) {
+                    throw IOException("GGUF 文件没有模型张量：本地副本 $actualSize 字节。")
+                }
+            }
+            is GgufMetadataReader.Result.Failure -> {
+                val sourceInfo = if (expectedSize > 0L) "；来源报告大小 $expectedSize 字节" else "；来源未提供可靠文件大小"
+                throw IOException(
+                    "GGUF 导入后完整性校验失败：本地副本 $actualSize 字节$sourceInfo；" +
+                        "原因：${result.reason}。文件未加入模型库，请重新下载完整模型后再导入。"
+                )
+            }
         }
     }
 
@@ -1077,8 +1125,8 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 835", "versionCode 842"),
-    ('versionName "0.8.7"', 'versionName "0.9.2"'),
+    ("versionCode 835", "versionCode 843"),
+    ('versionName "0.8.7"', 'versionName "0.9.3"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
     if value.count(old) != 1: raise SystemExit(f"Missing Gradle anchor: {old}")
@@ -1141,4 +1189,4 @@ target_link_libraries(ai-chat PRIVATE llama llama-common android log)
 
 print("GGUF direct Android runtime, file/folder import and chat activity integrated.")
 print("Restored exact MNN Chat label and original adaptive icon, no edition badge.")
-print("Version set to 0.9.2/code 841; safe side-by-side applicationId retained.")
+print("Version set to 0.9.3/code 843; safe side-by-side applicationId retained.")
