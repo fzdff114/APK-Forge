@@ -268,6 +268,24 @@ source = source.replace(
     "isAudioModel = ModelTypeUtils.isAudioModel(modelId)",
     "isAudioModel = !isGgufSession && ModelTypeUtils.isAudioModel(modelId)"
 )
+benchmark_anchor = '        recentItem.benchmarkInfo = ModelUtils.generateBenchMarkString(benchMarkResult)'
+benchmark_replacement = '''        recentItem.benchmarkInfo = if (isGgufSession) {
+            val outputText = benchMarkResult["response"] as? String ?: ""
+            val outputCharacters = outputText.codePointCount(0, outputText.length)
+            val elapsedMicros = (benchMarkResult["decode_time"] as? Number)?.toLong() ?: 0L
+            val charactersPerSecond = if (elapsedMicros > 0L) {
+                outputCharacters / (elapsedMicros / 1_000_000.0)
+            } else {
+                0.0
+            }
+            String.format(Locale.getDefault(), "GGUF · %d 字符 · %.2f 字符/秒", outputCharacters, charactersPerSecond)
+        } else {
+            ModelUtils.generateBenchMarkString(benchMarkResult)
+        }'''
+if source.count(benchmark_anchor) != 1:
+    raise SystemExit("GGUF benchmark display anchor not unique")
+source = source.replace(benchmark_anchor, benchmark_replacement, 1)
+
 menu_old = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = !isGgufSession
         menu.findItem(R.id.menu_item_benchmark_test).isVisible =
             benchmarkModule.enabled && !isGgufSession
