@@ -230,10 +230,12 @@ class GgufModelLibraryActivity : AppCompatActivity() {
                         this@GgufModelLibraryActivity, uri, cancellation
                     ) { copied, total -> updateImportProgress(progress, copied, total) }
                 }
-                if (imported == null) {
+                if (imported.isEmpty()) {
                     Toast.makeText(this@GgufModelLibraryActivity, "文件夹内没有 GGUF 文件。", Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(this@GgufModelLibraryActivity, "已导入：${imported.name}", Toast.LENGTH_LONG).show()
+                    val message = if (imported.size == 1) imported.single().name
+                        else "已导入 ${imported.size} 个模型"
+                    Toast.makeText(this@GgufModelLibraryActivity, message, Toast.LENGTH_LONG).show()
                     refreshModels()
                 }
             } catch (_: OperationCanceledException) {

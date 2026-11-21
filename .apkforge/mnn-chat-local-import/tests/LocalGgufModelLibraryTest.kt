@@ -48,6 +48,24 @@ class LocalGgufModelLibraryTest {
     }
 
     @Test
+    fun reportsFilesLargerThanTwoGiBWithoutTruncatingTheirSize() {
+        val root = Files.createTempDirectory("gguf-library-large").toFile()
+        try {
+            val folder = File(root, "large_model").apply { mkdirs() }
+            val model = File(folder, "large-model.gguf")
+            val expectedSize = 3L * 1024L * 1024L * 1024L
+            java.io.RandomAccessFile(model, "rw").use { it.setLength(expectedSize) }
+
+            val entry = LocalGgufModelLibrary.scan(root).single()
+
+            assertEquals(expectedSize, entry.totalBytes)
+            assertTrue(entry.isComplete)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun deleteCannotEscapeTheLibraryRoot() {
         val parent = Files.createTempDirectory("gguf-library-delete").toFile()
         try {
