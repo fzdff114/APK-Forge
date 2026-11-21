@@ -36,7 +36,7 @@ object LocalModelFormatInspector {
     )
 
     private val shardReference = Regex("\"([^\"]+\\.safetensors)\"")
-    private val modelTypePattern = Regex("\\\"model_type\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"")
+    private val modelTypePattern = Regex("\\\"model_type\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
     private val tokenizerFiles = setOf(
         "tokenizer.mtok", "tokenizer.txt", "tokenizer.json",
         "tokenizer.model", "tokenizer_config.json", "spiece.model", "vocab.json", "vocab.txt"
