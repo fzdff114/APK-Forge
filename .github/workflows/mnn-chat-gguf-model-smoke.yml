@@ -45,13 +45,15 @@ jobs:
 
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
-          old = """    if (LLAMA_BUILD_SERVER)
-                  # the chat app lives in ui/apps/chat, outside tools/
-                  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ui/apps/chat ${CMAKE_BINARY_DIR}/ui/apps/chat)
-                  add_subdirectory(cli)
-                  add_subdirectory(server)
-              endif()"""
-          new = """    add_subdirectory(cli)"""
+          old = (
+              "    if (LLAMA_BUILD_SERVER)\\n"
+              "        # the chat app lives in ui/apps/chat, outside tools/\\n"
+              "        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ui/apps/chat ${CMAKE_BINARY_DIR}/ui/apps/chat)\\n"
+              "        add_subdirectory(cli)\\n"
+              "        add_subdirectory(server)\\n"
+              "    endif()"
+          )
+          new = "    add_subdirectory(cli)"
           if source.count(old) != 1:
               raise SystemExit("Could not isolate the pinned llama-cli CMake target")
           path.write_text(source.replace(old, new, 1), encoding="utf-8")
