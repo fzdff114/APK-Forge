@@ -3,6 +3,7 @@ package com.alibaba.mnnllm.android.modelist
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.UUID
 
 /** Stores the most recent transcript separately for each imported GGUF model folder. */
 object GgufChatHistoryStore {
@@ -22,7 +23,7 @@ object GgufChatHistoryStore {
         if (!parent.exists() && !parent.mkdirs()) {
             throw IllegalStateException("Cannot create GGUF chat history folder.")
         }
-        val temporary = File(parent, file.name + ".tmp")
+        val temporary = File(parent, file.name + "." + UUID.randomUUID().toString() + ".tmp")
         FileOutputStream(temporary).use { output ->
             output.write(transcript.toByteArray(Charsets.UTF_8))
             output.fd.sync()
