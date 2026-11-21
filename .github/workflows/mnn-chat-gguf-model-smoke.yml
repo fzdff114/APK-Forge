@@ -45,18 +45,14 @@ jobs:
 
           path = Path(sys.argv[1])
           source = path.read_text(encoding="utf-8")
-          old = (
-              "    if (LLAMA_BUILD_SERVER)\\n"
-              "        # the chat app lives in ui/apps/chat, outside tools/\\n"
-              "        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ui/apps/chat ${CMAKE_BINARY_DIR}/ui/apps/chat)\\n"
-              "        add_subdirectory(cli)\\n"
-              "        add_subdirectory(server)\\n"
-              "    endif()"
-          )
-          new = "    add_subdirectory(cli)"
-          if source.count(old) != 1:
-              raise SystemExit("Could not isolate the pinned llama-cli CMake target")
-          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          # Move llama-cli out of the LLAMA_BUILD_SERVER gate without enabling UI/server targets.
+          remove_line = "        add_subdirectory(cli)" + chr(10)
+          insert_after = "    add_subdirectory(perplexity)" + chr(10)
+          if source.count(remove_line) != 1 or source.count(insert_after) != 1:
+              raise SystemExit("Could not relocate the pinned llama-cli CMake entry")
+          source = source.replace(remove_line, "", 1)
+          source = source.replace(insert_after, insert_after + "    add_subdirectory(cli)" + chr(10), 1)
+          path.write_text(source, encoding="utf-8")
           PY
 
       - name: Build host llama.cpp CLI
