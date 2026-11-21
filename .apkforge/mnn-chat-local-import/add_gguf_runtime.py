@@ -16,6 +16,10 @@ def copy(src, dst):
 
 copy(llama / "examples/llama.android/lib/src/main/cpp/ai_chat.cpp", cpp / "ai_chat.cpp")
 copy(llama / "examples/llama.android/lib/src/main/cpp/logging.h", cpp / "logging.h")
+logging_path = cpp / "logging.h"
+logging = logging_path.read_text()
+logging = logging.replace("if (__android_log_is_loggable(priority, tag, ANDROID_LOG_DEFAULT))", "if (priority >= ANDROID_LOG_INFO)")
+logging_path.write_text(logging)
 # The upstream helper calls __android_log_is_loggable(), an API-30 symbol. The app supports
 # API 26+, so use compile-time priority filtering to keep the native library loadable.
 logging_path = cpp / "logging.h"
