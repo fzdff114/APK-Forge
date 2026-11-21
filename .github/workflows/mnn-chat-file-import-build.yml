@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build-mnn-chat:
-    name: Build MNN Chat 0.8.5 (arm64-v8a)
+    name: Build MNN Chat 0.8.6 (arm64-v8a)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -84,8 +84,8 @@ jobs:
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
                'applicationId "com.alibaba.mnnllm.android.localimport"'),
-              ("versionCode 830", "versionCode 833"),
-              ('versionName "0.8.3"', 'versionName "0.8.5-conversion-diagnostics"'),
+              ("versionCode 830", "versionCode 834"),
+              ('versionName "0.8.3"', 'versionName "0.8.6-native-coherent"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
@@ -107,40 +107,52 @@ jobs:
           print("Variant identity set to com.alibaba.mnnllm.android.localimport (install alongside stock app).")
           PY
 
-      - name: Reuse the official 0.8.3 MNN runtime binaries
+      - name: Build MNN runtime from the same source revision
         shell: bash
         run: |
           set -euo pipefail
-          BASE_APK="$RUNNER_TEMP/mnn_chat_0_8_3_official.apk"
-          curl --fail --location --retry 5 --retry-all-errors \
-            "https://meta.alicdn.com/data/mnn/apks/mnn_chat_0_8_3.apk" \
-            --output "$BASE_APK"
-          python3 - "$BASE_APK" "$RUNNER_TEMP/MNN" <<'PY'
-          from pathlib import Path
-          import sys
-          import zipfile
+          cd "$RUNNER_TEMP/MNN/project/android"
+          mkdir -p build_64
+          cd build_64
+          ../build_64.sh \
+            -DMNN_LOW_MEMORY=ON \
+            -DMNN_CPU_WEIGHT_DEQUANT_GEMM=ON \
+            -DMNN_BUILD_LLM=ON \
+            -DMNN_SUPPORT_TRANSFORMER_FUSE=ON \
+            -DMNN_ARM82=ON \
+            -DMNN_USE_LOGCAT=ON \
+            -DMNN_OPENCL=ON \
+            -DLLM_SUPPORT_VISION=ON \
+            -DMNN_BUILD_OPENCV=ON \
+            -DMNN_IMGCODECS=ON \
+            -DLLM_SUPPORT_AUDIO=ON \
+            -DMNN_BUILD_AUDIO=ON \
+            -DMNN_BUILD_DIFFUSION=ON \
+            -DMNN_SEP_BUILD=OFF \
+            -DBUILD_PLUGIN=ON \
+            -DMNN_QNN=OFF \
+            -DMNN_HEXAGON=OFF \
+            -DMNN_BUILD_TEST=OFF \
+            -DMNN_BUILD_BENCHMARK=OFF \
+            -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 \
+            -DCMAKE_INSTALL_PREFIX=.
+          make install
+          LIB="$RUNNER_TEMP/MNN/project/android/build_64/lib/libMNN.so"
+          test -s "$LIB" || { echo "::error::Source-matched libMNN.so was not produced"; exit 1; }
+          sha256sum "$LIB"
+          echo "MNN_RUNTIME_SHA256=$(sha256sum "$LIB" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+          echo "MNN runtime built from source commit $MNN_SOURCE_COMMIT"
 
-          apk = Path(sys.argv[1])
-          repo = Path(sys.argv[2])
-          app = repo / "apps/Android/MnnLlmChat"
-          destinations = {
-              "lib/arm64-v8a/libMNN.so":
-                  repo / "project/android/build_64/lib/libMNN.so",
-              "lib/arm64-v8a/libsherpa-mnn-jni.so":
-                  app / "app/src/main/jniLibs/arm64-v8a/libsherpa-mnn-jni.so",
-          }
-          with zipfile.ZipFile(apk) as archive:
-              for member, target in destinations.items():
-                  try:
-                      data = archive.read(member)
-                  except KeyError:
-                      raise SystemExit(f"Official 0.8.3 APK is missing {member}")
-                  if not data:
-                      raise SystemExit(f"Official 0.8.3 APK contains an empty {member}")
-                  target.parent.mkdir(parents=True, exist_ok=True)
-                  target.write_bytes(data)
-                  print(f"Prepared {target.relative_to(repo)} ({len(data):,} bytes)")
-          PY
+      - name: Verify Sherpa JNI dependency source is not shadowed by an old APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHERPA="$RUNNER_TEMP/MNN/apps/Android/MnnLlmChat/app/src/main/jniLibs/arm64-v8a/libsherpa-mnn-jni.so"
+          if [ -e "$SHERPA" ]; then
+            echo "::error::Unexpected pre-existing Sherpa JNI binary would bypass the project's 16KB-compatible download task"
+            exit 1
+          fi
+          echo "Sherpa JNI will be fetched by downloadSherpaMnn.gradle (16KB-compatible package)."
 
       - name: Run Android unit tests
         working-directory: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat
@@ -161,7 +173,8 @@ jobs:
           APK="app/build/outputs/apk/standard/debug/app-standard-debug.apk"
           test -s "$APK" || { echo "::error::APK output was not created"; exit 1; }
           sha256sum "$APK"
-          echo "### MNN Chat conversion-diagnostics build" >> "$GITHUB_STEP_SUMMARY"
+          echo "### MNN Chat 0.8.6 native-coherent build" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source-matched libMNN SHA-256: `$MNN_RUNTIME_SHA256`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Source commit: \`$MNN_SOURCE_COMMIT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK: \`$APK\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- SHA-256:" >> "$GITHUB_STEP_SUMMARY"
@@ -170,7 +183,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v7
         with:
-          name: mnn-chat-0.8.5-conversion-diagnostics-arm64
+          name: mnn-chat-0.8.6-native-coherent-arm64
           path: ${{ runner.temp }}/MNN/apps/Android/MnnLlmChat/app/build/outputs/apk/standard/debug/app-standard-debug.apk
           if-no-files-found: error
           retention-days: 14
