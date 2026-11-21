@@ -15,6 +15,112 @@ def copy(src, dst):
     shutil.copy2(src, dst)
 
 copy(llama / "examples/llama.android/lib/src/main/cpp/ai_chat.cpp", cpp / "ai_chat.cpp")
+# Preserve native GGML diagnostics and retry file-mapping failures without mmap.
+ai_chat_path = cpp / "ai_chat.cpp"
+ai_chat = ai_chat_path.read_text(encoding="utf-8")
+ai_chat = ai_chat.replace(
+    "#include <string>\\n#include <unistd.h>",
+    "#include <string>\\n#include <mutex>\\n#include <algorithm>\\n#include <cctype>\\n#include <unistd.h>",
+    1
+)
+log_anchor = """extern "C"
+JNIEXPORT void JNICALL
+Java_com_arm_aichat_internal_InferenceEngineImpl_init"""
+log_bridge = r'''static std::mutex g_load_log_mutex;
+static std::string g_load_log;
+
+static std::string load_log_snapshot() {
+    std::lock_guard<std::mutex> guard(g_load_log_mutex);
+    return g_load_log;
+}
+
+static void clear_load_log() {
+    std::lock_guard<std::mutex> guard(g_load_log_mutex);
+    g_load_log.clear();
+}
+
+static void aichat_capture_log_callback(enum ggml_log_level level, const char * text, void * user) {
+    aichat_android_log_callback(level, text, user);
+    if (text == nullptr || text[0] == '\\0') return;
+    std::lock_guard<std::mutex> guard(g_load_log_mutex);
+    g_load_log.append(text);
+    constexpr size_t MAX_CAPTURED_LOG = 32768;
+    if (g_load_log.size() > MAX_CAPTURED_LOG) {
+        g_load_log.erase(0, g_load_log.size() - MAX_CAPTURED_LOG);
+    }
+}
+
+'''
+if ai_chat.count(log_anchor) != 1:
+    raise SystemExit("Could not locate native init anchor for GGUF error capture")
+ai_chat = ai_chat.replace(log_anchor, log_bridge + log_anchor, 1)
+if ai_chat.count("llama_log_set(aichat_android_log_callback, nullptr);") != 1:
+    raise SystemExit("Could not locate llama.cpp Android log handler")
+ai_chat = ai_chat.replace(
+    "llama_log_set(aichat_android_log_callback, nullptr);",
+    "llama_log_set(aichat_capture_log_callback, nullptr);",
+    1
+)
+load_anchor = '''Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
+    llama_model_params model_params = llama_model_default_params();'''
+load_repl = '''Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
+    clear_load_log();
+    llama_model_params model_params = llama_model_default_params();'''
+if ai_chat.count(load_anchor) != 1:
+    raise SystemExit("Could not locate native model load function")
+ai_chat = ai_chat.replace(load_anchor, load_repl, 1)
+old_model_load = '''    auto *model = llama_model_load_from_file(model_path, model_params);
+    env->ReleaseStringUTFChars(jmodel_path, model_path);
+    if (!model) {
+        return 1;
+    }
+    g_model = model;
+    return 0;
+}'''
+new_model_load = r'''    auto *model = llama_model_load_from_file(model_path, model_params);
+    if (!model) {
+        // Some Android document providers reject file-backed mmap.
+        std::string first_log = load_log_snapshot();
+        std::string lower_log = first_log;
+        std::transform(lower_log.begin(), lower_log.end(), lower_log.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const bool mapping_failure =
+            lower_log.find("mmap") != std::string::npos ||
+            lower_log.find("memory map") != std::string::npos ||
+            lower_log.find("failed to map") != std::string::npos ||
+            lower_log.find("operation not permitted") != std::string::npos ||
+            lower_log.find("permission denied") != std::string::npos;
+        if (mapping_failure) {
+            LOGw("File mapping failed; retrying GGUF load with mmap disabled.");
+            {
+                std::lock_guard<std::mutex> guard(g_load_log_mutex);
+                g_load_log.append("\nAndroid compatibility fallback: retrying with use_mmap=false.\n");
+            }
+            model_params.use_mmap = false;
+            model = llama_model_load_from_file(model_path, model_params);
+        }
+    }
+    env->ReleaseStringUTFChars(jmodel_path, model_path);
+    if (!model) {
+        LOGe("GGUF model load failed; returning captured llama.cpp diagnostics to Java.");
+        return 1;
+    }
+    g_model = model;
+    return 0;
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_com_arm_aichat_internal_InferenceEngineImpl_lastLoadError(JNIEnv *env, jobject) {
+    const std::string details = load_log_snapshot();
+    if (details.empty()) {
+        return env->NewStringUTF("llama.cpp returned no model-load diagnostics. Check GGUF integrity and available RAM.");
+    }
+    return env->NewStringUTF(details.c_str());
+}'''
+if (ai_chat.split(old_model_load).length !== 2) throw new Error("Native model load return anchor mismatch");
+ai_chat = ai_chat.replace(old_model_load, new_model_load);
+ai_chat_path.write_text(ai_chat, encoding="utf-8")
 upstream_logging = llama / "examples/llama.android/lib/src/main/cpp/logging.h"
 copy(upstream_logging, cpp / "logging.h")
 # ai_chat.cpp is compiled from the llama.cpp checkout, so its quoted include resolves
@@ -33,10 +139,46 @@ for logging_path in (cpp / "logging.h", upstream_logging):
 print("Patched the actual llama.cpp include and the mirrored app logging.h for API 26+.")
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/AiChat.kt", java / "com/arm/aichat/AiChat.kt")
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/InferenceEngine.kt", java / "com/arm/aichat/InferenceEngine.kt")
+interface_path = java / "com/arm/aichat/InferenceEngine.kt"
+interface_source = interface_path.read_text(encoding="utf-8")
+old_exception = "class UnsupportedArchitectureException : Exception()"
+new_exception = "class UnsupportedArchitectureException(message: String? = null) : Exception(message)"
+if interface_source.count(old_exception) != 1:
+    raise SystemExit("Could not patch GGUF load exception message")
+interface_path.write_text(interface_source.replace(old_exception, new_exception, 1), encoding="utf-8")
+
 engine_path = java / "com/arm/aichat/internal/InferenceEngineImpl.kt"
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/internal/InferenceEngineImpl.kt", engine_path)
 
 engine = engine_path.read_text()
+native_decl_anchor = """    @FastNative
+    private external fun load(modelPath: String): Int
+
+    @FastNative
+    private external fun prepare(): Int"""
+native_decl_replacement = """    @FastNative
+    private external fun load(modelPath: String): Int
+
+    @FastNative
+    private external fun lastLoadError(): String
+
+    @FastNative
+    private external fun prepare(): Int"""
+if engine.count(native_decl_anchor) != 1:
+    raise SystemExit("Could not add native lastLoadError declaration")
+engine = engine.replace(native_decl_anchor, native_decl_replacement, 1)
+old_load_error = "if (it != 0) throw UnsupportedArchitectureException()"
+new_load_error = """if (it != 0) {
+                        val nativeDetails = lastLoadError().trim()
+                        throw UnsupportedArchitectureException(
+                            nativeDetails.ifBlank {
+                                "llama.cpp 无法载入 GGUF。文件可能不完整、量化/架构不兼容，或设备内存不足。"
+                            }
+                        )
+                    }"""
+if engine.count(old_load_error) != 1:
+    raise SystemExit("Could not update native model error propagation")
+engine = engine.replace(old_load_error, new_load_error, 1)
 anchor = """            }
     }
 
@@ -69,6 +211,7 @@ engine_path.write_text(engine.replace(anchor, """        llamaScope.cancel()
 importer = r'''package com.alibaba.mnnllm.android.modelist
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
@@ -121,7 +264,10 @@ object LocalGgufModelImporter {
         try {
             files.forEach { (doc, _) ->
                 val name = doc.name ?: throw IOException("GGUF 文件缺少名称。")
-                copyChecked(context, doc.uri, File(folder, safeName(name)))
+                copyChecked(
+                    context, doc.uri, File(folder, safeName(name)),
+                    doc.length().takeIf { it > 0L } ?: reportedSize(context, doc.uri)
+                )
             }
             return File(folder, safeName(mainName))
         } catch (e: Exception) {
@@ -143,7 +289,20 @@ object LocalGgufModelImporter {
         }
     }
 
-    private fun copyChecked(context: Context, uri: Uri, target: File) {
+    private fun reportedSize(context: Context, uri: Uri): Long {
+        return try {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (cursor.moveToFirst() && index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else -1L
+            } ?: -1L
+        } catch (_: Exception) {
+            -1L
+        }
+    }
+
+    private fun copyChecked(
+        context: Context, uri: Uri, target: File, expectedSize: Long = reportedSize(context, uri)
+    ) {
         val input = context.contentResolver.openInputStream(uri) ?: throw IOException("无法打开 GGUF 文件。")
         input.use { source ->
             val magic = ByteArray(4)
@@ -161,7 +320,14 @@ object LocalGgufModelImporter {
                 output.fd.sync()
             }
         }
-        if (target.length() <= 8L) throw IOException("GGUF 文件为空或已损坏。")
+        val actualSize = target.length()
+        if (actualSize <= 8L) throw IOException("GGUF 文件为空或已损坏。")
+        if (expectedSize > 0L && actualSize != expectedSize) {
+            throw IOException(
+                "GGUF 复制不完整：来源文件 " + expectedSize + " 字节，实际保存 " +
+                    actualSize + " 字节。请重新下载模型后再导入。"
+            )
+        }
     }
 
     private fun createFolder(context: Context, model: String): File {
@@ -206,6 +372,7 @@ class GgufChatActivity : AppCompatActivity() {
     private var engine: InferenceEngine? = null
     private var generation: Job? = null
     private var ready = false
+    private var metadataSummary = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -224,6 +391,11 @@ class GgufChatActivity : AppCompatActivity() {
                         }
                     }
                 }
+                metadataSummary = "GGUF 版本：" + metadata.version +
+                    "\\n架构：" + (metadata.architecture ?: "未知") +
+                    "\\n张量：" + metadata.tensorCount +
+                    "\\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
+                    "\\n文件大小：" + formatSize(modelFile.length())
                 status.text = "GGUF 元数据校验通过，正在启动推理引擎…"
                 val modelEngine = withContext(Dispatchers.Default) {
                     AiChat.getInferenceEngine(applicationContext)
@@ -250,7 +422,13 @@ class GgufChatActivity : AppCompatActivity() {
                         "\n\n"
                 )
             } catch (e: Exception) {
-                status.text = "模型加载失败：" + (e.message ?: e.javaClass.simpleName)
+                status.text = "模型加载失败，详细原因见下方"
+                if (::transcript.isInitialized) {
+                    transcript.append(
+                        "模型加载失败\\n" + metadataSummary + "\\n异常： " +
+                            (e.message ?: e.javaClass.simpleName) + "\\n\\n"
+                    )
+                }
             }
         }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -497,8 +675,8 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 835", "versionCode 836"),
-    ('versionName "0.8.7"', 'versionName "0.8.8"'),
+    ("versionCode 835", "versionCode 837"),
+    ('versionName "0.8.7"', 'versionName "0.8.9"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
     if value.count(old) != 1: raise SystemExit(f"Missing Gradle anchor: {old}")
@@ -561,4 +739,4 @@ target_link_libraries(ai-chat PRIVATE llama llama-common android log)
 
 print("GGUF direct Android runtime, file/folder import and chat activity integrated.")
 print("Restored exact MNN Chat label and original adaptive icon, no edition badge.")
-print("Version set to 0.8.8/code 836; coexistence applicationId retained.")
+print("Version set to 0.8.9/code 837; coexistence applicationId retained.")
