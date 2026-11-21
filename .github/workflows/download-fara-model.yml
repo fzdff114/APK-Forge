@@ -81,7 +81,6 @@ jobs:
             "$OUT/Fara1.5-4B-IQ2_M.gguf" "$OUT/model.part-"
           split --bytes=400M --numeric-suffixes=0 --suffix-length=2 \
             "$OUT/mmproj-Fara1.5-4B-f16.gguf" "$OUT/mmproj.part-"
-          cp "$OUT/SHA256SUMS" "$OUT/README_中文.txt" "$OUT/"
           ls -lh "$OUT"/*.part-* 
 
       - name: Upload model chunk 01
