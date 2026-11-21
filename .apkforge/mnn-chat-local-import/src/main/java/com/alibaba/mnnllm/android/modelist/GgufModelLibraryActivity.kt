@@ -80,6 +80,10 @@ class GgufModelLibraryActivity : AppCompatActivity() {
                 setOnClickListener { folderPicker.launch(null) }
             }, LinearLayout.LayoutParams(0, -2, 1f))
         })
+        page.addView(Button(this).apply {
+            text = "下载已验证的 DeepSeek 1.5B 模型（753 MB）"
+            setOnClickListener { downloadVerifiedDeepSeek() }
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         summary = TextView(this).apply {
             textSize = 13f
             setPadding(0, dp(10), 0, dp(8))
@@ -162,9 +166,15 @@ class GgufModelLibraryActivity : AppCompatActivity() {
             Toast.makeText(this, "模型文件不完整，无法加载。", Toast.LENGTH_LONG).show()
             return
         }
+        val displayName = entry.displayName.removeSuffix(".gguf")
         startActivity(
-            Intent(this, GgufChatActivity::class.java)
-                .putExtra(GgufChatActivity.EXTRA_MODEL_PATH, entry.primaryFile.absolutePath)
+            Intent(
+                this,
+                com.alibaba.mnnllm.android.chat.ChatActivity::class.java
+            )
+                .putExtra("modelName", displayName)
+                .putExtra("modelId", "local-gguf-${entry.folder.name}")
+                .putExtra("ggufModelPath", entry.primaryFile.absolutePath)
         )
     }
 
@@ -196,6 +206,47 @@ class GgufModelLibraryActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    private fun downloadVerifiedDeepSeek() {
+        val cancellation = CancellationSignal()
+        val progress = showImportProgress(
+            cancellation,
+            "下载已验证模型",
+            "正在从 ModelScope 下载 DeepSeek Q2_K，并校验完整 SHA-256…"
+        )
+        lifecycleScope.launch {
+            try {
+                val imported = withContext(Dispatchers.IO) {
+                    VerifiedDeepSeekDownloader.download(
+                        this@GgufModelLibraryActivity,
+                        cancellation
+                    ) { copied, total ->
+                        updateImportProgress(progress, copied, total)
+                    }
+                }
+                Toast.makeText(
+                    this@GgufModelLibraryActivity,
+                    "已下载并校验通过：${imported.name}",
+                    Toast.LENGTH_LONG
+                ).show()
+                refreshModels()
+            } catch (_: OperationCanceledException) {
+                Toast.makeText(
+                    this@GgufModelLibraryActivity,
+                    "已取消下载，未保留不完整文件。",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@GgufModelLibraryActivity,
+                    "下载失败：" + (e.message ?: e.javaClass.simpleName),
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                if (progress.isShowing) progress.dismiss()
+            }
+        }
     }
 
     private fun importFile(uri: Uri) {
@@ -264,14 +315,18 @@ class GgufModelLibraryActivity : AppCompatActivity() {
         } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "model.gguf"
     }
 
-    private fun showImportProgress(cancellation: CancellationSignal): ProgressDialog =
+    private fun showImportProgress(
+        cancellation: CancellationSignal,
+        title: String = "导入本地模型",
+        message: String = "正在复制模型文件…"
+    ): ProgressDialog =
         ProgressDialog(this).apply {
-            setTitle("导入本地模型")
+            setTitle(title)
             setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
             max = 100
             progress = 0
             isIndeterminate = true
-            setMessage("正在复制模型文件…")
+            setMessage(message)
             setCancelable(true)
             setCanceledOnTouchOutside(false)
             setOnCancelListener { cancellation.cancel() }
