@@ -19,8 +19,8 @@ copy(llama / "examples/llama.android/lib/src/main/cpp/ai_chat.cpp", cpp / "ai_ch
 ai_chat_path = cpp / "ai_chat.cpp"
 ai_chat = ai_chat_path.read_text(encoding="utf-8")
 ai_chat = ai_chat.replace(
-    "#include <string>\\n#include <unistd.h>",
-    "#include <string>\\n#include <mutex>\\n#include <algorithm>\\n#include <cctype>\\n#include <unistd.h>",
+    "#include <string>\n#include <unistd.h>",
+    "#include <string>\n#include <mutex>\n#include <algorithm>\n#include <cctype>\n#include <unistd.h>",
     1
 )
 log_anchor = """extern "C"
@@ -41,7 +41,7 @@ static void clear_load_log() {
 
 static void aichat_capture_log_callback(enum ggml_log_level level, const char * text, void * user) {
     aichat_android_log_callback(level, text, user);
-    if (text == nullptr || text[0] == '\\0') return;
+    if (text == nullptr || text[0] == '\0') return;
     std::lock_guard<std::mutex> guard(g_load_log_mutex);
     g_load_log.append(text);
     constexpr size_t MAX_CAPTURED_LOG = 32768;
@@ -392,10 +392,14 @@ class GgufChatActivity : AppCompatActivity() {
                     }
                 }
                 metadataSummary = "GGUF 版本：" + metadata.version +
-                    "\\n架构：" + (metadata.architecture ?: "未知") +
-                    "\\n张量：" + metadata.tensorCount +
-                    "\\n量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
-                    "\\n文件大小：" + formatSize(modelFile.length())
+                    "
+架构：" + (metadata.architecture ?: "未知") +
+                    "
+张量：" + metadata.tensorCount +
+                    "
+量化类型：" + metadata.tensorTypes.sorted().joinToString(", ") +
+                    "
+文件大小：" + formatSize(modelFile.length())
                 status.text = "GGUF 元数据校验通过，正在启动推理引擎…"
                 val modelEngine = withContext(Dispatchers.Default) {
                     AiChat.getInferenceEngine(applicationContext)
@@ -425,8 +429,12 @@ class GgufChatActivity : AppCompatActivity() {
                 status.text = "模型加载失败，详细原因见下方"
                 if (::transcript.isInitialized) {
                     transcript.append(
-                        "模型加载失败\\n" + metadataSummary + "\\n异常： " +
-                            (e.message ?: e.javaClass.simpleName) + "\\n\\n"
+                        "模型加载失败
+" + metadataSummary + "
+异常： " +
+                            (e.message ?: e.javaClass.simpleName) + "
+
+"
                     )
                 }
             }
