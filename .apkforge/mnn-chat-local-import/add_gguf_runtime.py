@@ -1258,8 +1258,8 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 842", "versionCode 842"),
-    ('versionName "0.9.4"', 'versionName "0.9.4"'),
+    ("versionCode 843", "versionCode 843"),
+    ('versionName "0.9.5"', 'versionName "0.9.5"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
     if value.count(old) != 1: raise SystemExit(f"Missing Gradle anchor: {old}")
@@ -1322,4 +1322,4 @@ target_link_libraries(ai-chat PRIVATE llama llama-common android log)
 
 print("GGUF direct Android runtime, file/folder import and chat activity integrated.")
 print("Restored exact MNN Chat label and original adaptive icon, no edition badge.")
-print("Version set to 0.9.4/code 842; safe side-by-side applicationId retained.")
+print("Version set to 0.9.5/code 843; safe side-by-side applicationId retained.")
