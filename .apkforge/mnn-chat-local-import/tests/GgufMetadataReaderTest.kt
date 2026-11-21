@@ -1,0 +1,113 @@
+package com.alibaba.mnnllm.android.modelist
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
+
+class GgufMetadataReaderTest {
+    @Test
+    fun readsArchitectureBlockCountAndTensorQuantizationWithoutReadingTensorPayload() {
+        val bytes = ggufFixture(listOf(2, 14), includeTokenArray = true)
+        val result = GgufMetadataReader.inspect(bytes.inputStream())
+
+        assertTrue(result is GgufMetadataReader.Result.Success)
+        val metadata = (result as GgufMetadataReader.Result.Success).metadata
+        assertEquals(3, metadata.version)
+        assertEquals("llama", metadata.architecture)
+        assertEquals("Tiny Llama Fixture", metadata.modelName)
+        assertEquals(2L, metadata.blockCount)
+        assertEquals(2L, metadata.tensorCount)
+        assertEquals(setOf("Q4_0", "Q6_K"), metadata.tensorTypes)
+        assertEquals(listOf("blk.0.attn_q.weight", "output_norm.weight"), metadata.tensorNames)
+        assertTrue(metadata.unsupportedTensorTypes.isEmpty())
+    }
+
+    @Test
+    fun reportsTensorTypesNotHandledByOfficialMnnGgufWeightMapper() {
+        val result = GgufMetadataReader.inspect(ggufFixture(listOf(39)).inputStream())
+
+        assertTrue(result is GgufMetadataReader.Result.Success)
+        val metadata = (result as GgufMetadataReader.Result.Success).metadata
+        assertEquals(setOf("GGML_TYPE_39"), metadata.unsupportedTensorTypes)
+    }
+
+    @Test
+    fun rejectsTruncatedGgufHeaderGracefully() {
+        val result = GgufMetadataReader.inspect(byteArrayOf(
+            'G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte(),
+            3, 0, 0, 0
+        ).inputStream())
+
+        assertTrue(result is GgufMetadataReader.Result.Failure)
+        assertFalse((result as GgufMetadataReader.Result.Failure).reason.isBlank())
+    }
+
+    @Test
+    fun rejectsUnreasonableMetadataCountsBeforeAllocating() {
+        val output = ByteArrayOutputStream()
+        output.write(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+        writeU32(output, 3)
+        writeU64(output, 0)
+        writeU64(output, Long.MAX_VALUE)
+
+        val result = GgufMetadataReader.inspect(output.toByteArray().inputStream())
+
+        assertTrue(result is GgufMetadataReader.Result.Failure)
+    }
+
+    private fun ggufFixture(types: List<Int>, includeTokenArray: Boolean): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.write(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
+        writeU32(output, 3)
+        writeU64(output, types.size.toLong())
+        writeU64(output, if (includeTokenArray) 4 else 3)
+
+        writeString(output, "general.architecture")
+        writeU32(output, 8)
+        writeString(output, "llama")
+
+        writeString(output, "general.name")
+        writeU32(output, 8)
+        writeString(output, "Tiny Llama Fixture")
+
+        writeString(output, "llama.block_count")
+        writeU32(output, 4)
+        writeU32(output, 2)
+
+        if (includeTokenArray) {
+            writeString(output, "tokenizer.ggml.tokens")
+            writeU32(output, 9)
+            writeU32(output, 8)
+            writeU64(output, 2)
+            writeString(output, "<s>")
+            writeString(output, "</s>")
+        }
+
+        types.forEachIndexed { index, type ->
+            writeString(output, if (index == 0) "blk.0.attn_q.weight" else "output_norm.weight")
+            writeU32(output, 2)
+            writeU64(output, 4)
+            writeU64(output, 4)
+            writeU32(output, type)
+            writeU64(output, 0)
+        }
+        return output.toByteArray()
+    }
+
+    private fun writeString(output: ByteArrayOutputStream, value: String) {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        writeU64(output, bytes.size.toLong())
+        output.write(bytes)
+    }
+
+    private fun writeU32(output: ByteArrayOutputStream, value: Int) {
+        repeat(4) { index -> output.write((value ushr (8 * index)) and 0xff) }
+    }
+
+    private fun writeU64(output: ByteArrayOutputStream, value: Long) {
+        repeat(8) { index -> output.write(((value ushr (8 * index)) and 0xff).toInt()) }
+    }
+}
