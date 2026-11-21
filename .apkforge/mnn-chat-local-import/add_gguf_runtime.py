@@ -252,67 +252,104 @@ object LocalGgufModelImporter {
         uri: Uri,
         cancellationSignal: CancellationSignal? = null,
         onProgress: ((copiedBytes: Long, totalBytes: Long) -> Unit)? = null
-    ): File? {
+    ): List<File> {
         val tree = DocumentFile.fromTreeUri(context, uri) ?: throw IOException("无法读取所选文件夹。")
         val found = mutableListOf<Pair<DocumentFile, String>>()
-        collect(tree, "", 0, found)
-        if (found.isEmpty()) return null
+        collect(tree, "", found)
+        if (found.isEmpty()) return emptyList()
         if (found.any { it.first.name?.contains("mmproj", true) == true })
             throw IOException("当前版本先支持纯文本 GGUF。所选目录包含 mmproj 多模态投影文件，视觉/多模态推理尚未接入。")
-        val groups = found.groupBy { it.second.substringBeforeLast('/', "") }
-        if (groups.size != 1) throw IOException("所选文件夹包含多个 GGUF 模型，请选择单个模型文件夹。")
-        val files = groups.values.single()
-        val names = files.map { it.first.name ?: throw IOException("GGUF 文件缺少名称。") }
-        val shards = names.mapNotNull { name -> shardPattern.find(name)?.let { name to it } }
-        val mainName: String
-        if (shards.isNotEmpty()) {
-            val total = shards.first().second.groupValues[2].toInt()
-            if (shards.size != files.size || shards.size != total ||
-                shards.any { it.second.groupValues[2].toInt() != total })
-                throw IOException("GGUF 分片集合不完整或属于不同模型。")
-            val indices = shards.map { it.second.groupValues[1].toInt() }.toSet()
-            if (indices != (1..total).toSet()) throw IOException("GGUF 分片不完整：应有 1 到 $total 号分片。")
-            mainName = shards.minBy { it.second.groupValues[1].toInt() }.first
-        } else {
-            if (files.size != 1) throw IOException("发现多个 GGUF 文件，但无法确认它们属于同一个分片模型。")
-            mainName = names.single()
-        }
-        val folder = createFolder(context, mainName)
-        try {
+
+        // A folder may contain several independent model subfolders. Validate all groups first.
+        data class ImportPlan(
+            val files: List<Pair<DocumentFile, String>>,
+            val primaryName: String,
+            val expectedSizes: List<Long>
+        )
+        val groups = found.groupBy { it.second.substringBeforeLast('/', "") }.toSortedMap()
+        val plans = groups.values.map { group ->
+            val files = group.sortedBy { it.first.name?.lowercase() ?: "" }
+            val names = files.map { it.first.name ?: throw IOException("GGUF 文件缺少名称。") }
+            val safeNames = names.map { safeName(it).lowercase() }
+            if (safeNames.toSet().size != safeNames.size)
+                throw IOException("模型文件夹中存在重名文件，无法安全导入。")
+
+            val shards = names.mapNotNull { name -> shardPattern.find(name)?.let { name to it } }
+            val primaryName = if (shards.isNotEmpty()) {
+                val total = shards.first().second.groupValues[2].toInt()
+                if (shards.size != files.size || shards.size != total ||
+                    shards.any { it.second.groupValues[2].toInt() != total })
+                    throw IOException("GGUF 分片集合不完整或属于不同模型。")
+                val indices = shards.map { it.second.groupValues[1].toInt() }.toSet()
+                if (indices.size != total || (1..total).any { it !in indices })
+                    throw IOException("GGUF 分片不完整：应有 1 到 ${total} 号分片。")
+                shards.minBy { it.second.groupValues[1].toInt() }.first
+            } else {
+                if (files.size != 1)
+                    throw IOException("同一子文件夹中存在多个 GGUF 文件，但无法确认它们属于同一个分片模型。")
+                names.single()
+            }
             val expectedSizes = files.map { (doc, _) ->
                 doc.length().takeIf { it > 0L } ?: reportedSize(context, doc.uri)
             }
-            val totalBytes = expectedSizes.filter { it > 0L }.sum()
-            var copiedBefore = 0L
-            files.forEachIndexed { index, (doc, _) ->
+            ImportPlan(files, primaryName, expectedSizes)
+        }
+
+        // There is deliberately no model-file size ceiling. Copy until EOF; free storage is
+        // the only practical storage boundary.
+        val allSizesKnown = plans.all { plan -> plan.expectedSizes.all { it > 0L } }
+        val totalBytes = if (allSizesKnown) plans.sumOf { it.expectedSizes.sum() } else -1L
+        var copiedBefore = 0L
+        val createdFolders = mutableListOf<File>()
+        val importedModels = mutableListOf<File>()
+        try {
+            plans.forEach { plan ->
                 cancellationSignal?.throwIfCanceled()
-                val name = doc.name ?: throw IOException("GGUF 文件缺少名称。")
-                val expected = expectedSizes[index]
-                copyChecked(
-                    context, doc.uri, File(folder, safeName(name)), expected,
-                    cancellationSignal
-                ) { copied, _ ->
-                    onProgress?.invoke(copiedBefore + copied, totalBytes)
+                val folder = createFolder(context, plan.primaryName)
+                createdFolders += folder
+                plan.files.forEachIndexed { index, (doc, _) ->
+                    cancellationSignal?.throwIfCanceled()
+                    val name = doc.name ?: throw IOException("GGUF 文件缺少名称。")
+                    val expected = plan.expectedSizes[index]
+                    val target = File(folder, safeName(name))
+                    copyChecked(
+                        context, doc.uri, target, expected, cancellationSignal
+                    ) { copied, _ ->
+                        onProgress?.invoke(copiedBefore + copied, totalBytes)
+                    }
+                    copiedBefore += target.length()
                 }
-                if (expected > 0L) copiedBefore += expected
+                importedModels += File(folder, safeName(plan.primaryName))
             }
-            return File(folder, safeName(mainName))
+            return importedModels
         } catch (e: Exception) {
-            folder.deleteRecursively()
+            createdFolders.forEach { it.deleteRecursively() }
             throw e
         }
     }
 
     private fun collect(
-        dir: DocumentFile, relative: String, depth: Int,
+        dir: DocumentFile,
+        relative: String,
         out: MutableList<Pair<DocumentFile, String>>
     ) {
-        if (depth > 4) return
-        dir.listFiles().forEach { child ->
-            val name = child.name ?: return@forEach
-            if (child.isDirectory) collect(child, if (relative.isEmpty()) name else "$relative/$name", depth + 1, out)
-            else if (child.isFile && name.endsWith(".gguf", true))
-                out += child to if (relative.isEmpty()) name else "$relative/$name"
+        // Iterative traversal avoids a fixed nesting-depth restriction and stack overflows.
+        // SAF providers can expose aliases; URI tracking prevents provider cycles.
+        val pending = java.util.ArrayDeque<Pair<DocumentFile, String>>()
+        val visited = HashSet<String>()
+        pending.addLast(dir to relative)
+        while (pending.isNotEmpty()) {
+            val (current, base) = pending.removeFirst()
+            if (!visited.add(current.uri.toString())) continue
+            current.listFiles().forEach { child ->
+                val name = child.name ?: return@forEach
+                val childPath = if (base.isEmpty()) name else "$base/$name"
+                if (child.isDirectory) {
+                    pending.addLast(child to childPath)
+                } else if (child.isFile && name.endsWith(".gguf", true)) {
+                    out += child to childPath
+                }
+            }
         }
     }
 
@@ -714,7 +751,7 @@ main = main[:a] + r'''    private fun importLocalModelFromUri(treeUri: Uri) {
         }
         lifecycleScope.launch {
             try {
-                val gguf = withContext(Dispatchers.IO) {
+                val ggufModels = withContext(Dispatchers.IO) {
                     LocalGgufModelImporter.copyFromTree(this@MainActivity, treeUri, cancellationSignal) { copied, total ->
                         runOnUiThread {
                             if (dialog.isShowing) {
@@ -726,9 +763,15 @@ main = main[:a] + r'''    private fun importLocalModelFromUri(treeUri: Uri) {
                         }
                     }
                 }
-                if (gguf != null) {
-                    startActivity(Intent(this@MainActivity, GgufChatActivity::class.java)
-                        .putExtra(GgufChatActivity.EXTRA_MODEL_PATH, gguf.absolutePath))
+                if (ggufModels.isNotEmpty()) {
+                    if (ggufModels.size == 1) {
+                        startActivity(Intent(this@MainActivity, GgufChatActivity::class.java)
+                            .putExtra(GgufChatActivity.EXTRA_MODEL_PATH, ggufModels.single().absolutePath))
+                    } else {
+                        Toast.makeText(this@MainActivity,
+                            "已导入 ${ggufModels.size} 个 GGUF 模型，已加入模型库。", Toast.LENGTH_LONG).show()
+                        startActivity(Intent(this@MainActivity, GgufModelLibraryActivity::class.java))
+                    }
                     return@launch
                 }
                 val imported = withContext(Dispatchers.IO) {
@@ -896,7 +939,7 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 835", "versionCode 841"),
+    ("versionCode 835", "versionCode 842"),
     ('versionName "0.8.7"', 'versionName "0.9.2"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
