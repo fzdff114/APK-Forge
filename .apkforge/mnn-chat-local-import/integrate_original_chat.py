@@ -156,6 +156,18 @@ menu_new = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = !
 if source.count(menu_old) != 1:
     raise SystemExit("ChatActivity: menu visibility block not unique")
 source = source.replace(menu_old, menu_new, 1)
+api_old = '''            if (isApiServiceEnabled(this)) {
+                ApiServiceManager.startApiService(this, modelId)
+            }
+'''
+api_new = '''            if (!isGgufSession && isApiServiceEnabled(this)) {
+                ApiServiceManager.startApiService(this, modelId)
+            }
+'''
+if source.count(api_old) != 1:
+    raise SystemExit("ChatActivity: API service startup anchor not unique")
+source = source.replace(api_old, api_new, 1)
+
 activity.write_text(source, encoding="utf-8")
 
 print("GGUF ChatSession is now hosted by the original MNN ChatActivity.")
