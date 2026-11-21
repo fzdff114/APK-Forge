@@ -641,9 +641,6 @@ class GgufChatActivity : AppCompatActivity() {
 p = java / "com/alibaba/mnnllm/android/modelist/GgufChatActivity.kt"
 p.write_text(activity)
 
-p = java / "com/alibaba/mnnllm/android/modelist/GgufChatActivity.kt"
-p.write_text(activity)
-
 main_path = java / "com/alibaba/mnnllm/android/main/MainActivity.kt"
 main = main_path.read_text()
 anchor = "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\n"
