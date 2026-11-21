@@ -294,37 +294,28 @@ def main() -> None:
                 app:label_text="@string/add_local_model_file"
                 app:fab_icon="@drawable/ic_model"
                 android:onClick="addLocalModelFile"/>
-            <com.nambimobile.widgets.efab.FabOption
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                app:fab_orientation="portrait"
-                app:label_text="@string/open_gguf_model_library"
-                app:fab_icon="@drawable/ic_model"
-                android:onClick="openGgufModelLibrary"/>
 '''
     contents["main_layout"] = replace_once(contents["main_layout"], fab_anchor, fab_addition, "main-page FAB option")
 
     zh_entries = '''    <string name="add_local_model_from_files">从文件管理器导入 MNN 文件夹</string>
-    <string name="add_local_model_file">识别 GGUF、ZIP 等模型文件</string>
+    <string name="add_local_model_file">导入 GGUF / MNN 模型文件</string>
     <string name="local_model_import_title">导入本地模型</string>
     <string name="local_model_import_progress">正在复制模型文件，请保持应用运行…</string>
     <string name="local_model_import_success">本地模型已导入：%1$s</string>
     <string name="local_model_import_failed">导入失败：%1$s</string>
     <string name="local_model_invalid_folder">请选择根目录直接包含 config.json 的 MNN 模型文件夹。</string>
-    <string name="open_gguf_model_library">管理已导入的 GGUF 模型</string>
 '''
     contents["strings_zh"] = replace_once(
         contents["strings_zh"], "</resources>", zh_entries + "</resources>", "Chinese import strings"
     )
 
     en_entries = '''    <string name="add_local_model_from_files">Import MNN Folder from File Manager</string>
-    <string name="add_local_model_file">Inspect GGUF, ZIP and Model Files</string>
+    <string name="add_local_model_file">Import GGUF / MNN Model Files</string>
     <string name="local_model_import_title">Import Local Model</string>
     <string name="local_model_import_progress">Copying model files. Keep the app open…</string>
     <string name="local_model_import_success">Model imported: %1$s</string>
     <string name="local_model_import_failed">Import failed: %1$s</string>
     <string name="local_model_invalid_folder">Select an MNN model folder with config.json directly in its root.</string>
-    <string name="open_gguf_model_library">Manage Imported GGUF Models</string>
 '''
     contents["strings_en"] = replace_once(
         contents["strings_en"], "</resources>", en_entries + "</resources>", "English import strings"
