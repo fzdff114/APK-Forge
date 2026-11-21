@@ -182,8 +182,8 @@ jobs:
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
                'applicationId "com.alibaba.mnnllm.android.localimport096"'),
-              ("versionCode 830", "versionCode 844"),
-              ('versionName "0.8.3"', 'versionName "0.9.6"'),
+              ("versionCode 830", "versionCode 843"),
+              ('versionName "0.8.3"', 'versionName "0.9.5"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
@@ -191,7 +191,7 @@ jobs:
               source = source.replace(old, new, 1)
           gradle.write_text(source, encoding="utf-8")
 
-          print("Variant package set to com.alibaba.mnnllm.android.localimport095 (preserves earlier app installs and their private data); app label stays MNN Chat.")
+          print("Variant package set to com.alibaba.mnnllm.android.localimport096 (preserves earlier app installs and their private data); app label stays MNN Chat.")
 
           PY
 
