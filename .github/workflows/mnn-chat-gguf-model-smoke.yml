@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - mnn-chat-conversion-diagnostics
+      - mnn-chat-gguf-feature-improvements
     paths:
       - ".github/workflows/mnn-chat-gguf-model-smoke.yml"
   workflow_dispatch:
