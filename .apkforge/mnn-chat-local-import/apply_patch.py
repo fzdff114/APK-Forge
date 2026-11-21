@@ -331,6 +331,8 @@ def main() -> None:
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelFormatInspectorTest.kt"),
         Path(__file__).parent / "tests/LocalModelArchiveImporterTest.kt":
             Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/LocalModelArchiveImporterTest.kt"),
+        Path(__file__).parent / "tests/GgufMetadataReaderTest.kt":
+            Path("apps/Android/MnnLlmChat/app/src/test/java/com/alibaba/mnnllm/android/modelist/GgufMetadataReaderTest.kt"),
     }
     for source_path, target_path in extra_sources.items():
         if not source_path.is_file():
