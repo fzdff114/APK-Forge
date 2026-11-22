@@ -152,6 +152,10 @@ menu_new = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = !
             benchmarkModule.enabled && !isGgufSession
         // GGUF currently has no trustworthy MNN-compatible prefill/decode token counters.
         menu.findItem(R.id.show_performance_metrics).isVisible = !isGgufSession
+        // These entries depend on the MNN API/config backend and are not available to GGUF yet.
+        menu.findItem(R.id.menu_item_api_settings).isVisible = !isGgufSession
+        menu.findItem(R.id.menu_item_api_console).isVisible = !isGgufSession
+        menu.findItem(R.id.menu_item_config_info).isVisible = !isGgufSession
         // GGUF sessions are text-only and use llama.cpp, not the MNN audio/template backend.
         menu.findItem(R.id.start_voice_chat).isVisible = !isDiffusion && !isGgufSession
 '''
