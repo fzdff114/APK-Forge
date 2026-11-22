@@ -460,6 +460,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: mnn-chat-0.9.6-gguf-runtime-arm64
-          path: ${{ runner.temp }}/MNN_Chat_0.9.5_SideBySide_arm64.apk
+          path: ${{ runner.temp }}/MNN_Chat_0.9.6_SideBySide_arm64.apk
           if-no-files-found: error
           retention-days: 14
