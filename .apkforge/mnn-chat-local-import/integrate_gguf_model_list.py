@@ -50,6 +50,11 @@ cache_new = '''                val localItem = if (modelId.startsWith("local-ggu
 '''
 replace_once(manager, cache_old, cache_new, "GGUF model cache restoration")
 
+cache_name_old = '''                    modelName = (wrapper.modelItem.modelMarketItem as? ModelMarketItem)?.modelName,'''
+cache_name_new = '''                    modelName = wrapper.modelItem.modelName
+                        ?: (wrapper.modelItem.modelMarketItem as? ModelMarketItem)?.modelName,'''
+replace_once(manager, cache_name_old, cache_name_new, "GGUF display-name cache preservation")
+
 load_anchor = '''            // Initialize ModelMarketCache and wait for it to be ready using Flow
 '''
 load_addition = '''             // Imported GGUF files appear in the same main list as local MNN models.

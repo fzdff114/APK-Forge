@@ -35,6 +35,10 @@ object LocalGgufModelImporter {
         if (name.contains("mmproj", ignoreCase = true)) {
             throw IOException("当前 GGUF 后端只支持文本模型；mmproj 多模态投影文件暂不可单独导入。")
         }
+        val shard = shardPattern.find(name)
+        if (shard != null && shard.groupValues[2].toInt() > 1) {
+            throw IOException("这是多分片 GGUF 模型的一部分，请选择包含全部分片的文件夹导入。")
+        }
         val expectedSize = querySize(context, uri)
         val folder = createModelFolder(context, name)
         try {
