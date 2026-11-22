@@ -1258,8 +1258,6 @@ gradle = app / "build.gradle"
 value = gradle.read_text()
 for old, new in [
     ('ndkVersion "27.2.12479018"', 'ndkVersion "29.0.13113456"'),
-    ("versionCode 843", "versionCode 844"),
-    ('versionName "0.9.5"', 'versionName "0.9.6"'),
     ("version '3.22.1'", "version '3.31.6'"),
 ]:
     if value.count(old) != 1: raise SystemExit(f"Missing Gradle anchor: {old}")
