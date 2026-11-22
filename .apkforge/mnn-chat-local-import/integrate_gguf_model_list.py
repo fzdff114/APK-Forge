@@ -241,13 +241,15 @@ for activity_name in ["GgufChatActivity.kt", "GgufModelLibraryActivity.kt"]:
 manifest = app / "app/src/main/AndroidManifest.xml"
 manifest_source = manifest.read_text(encoding="utf-8")
 manifest_source = re.sub(
-    r'\\s*<activity\\s+android:name="\\.modelist\\.GgufChatActivity".*?/>', "",
+    r'\s*<activity\s+android:name="\.modelist\.GgufChatActivity".*?/>', "",
     manifest_source, flags=re.DOTALL
 )
 manifest_source = re.sub(
-    r'\\s*<activity\\s+android:name="\\.modelist\\.GgufModelLibraryActivity".*?/>', "",
+    r'\s*<activity\s+android:name="\.modelist\.GgufModelLibraryActivity".*?/>', "",
     manifest_source, flags=re.DOTALL
 )
+if "GgufChatActivity" in manifest_source or "GgufModelLibraryActivity" in manifest_source:
+    raise SystemExit("Standalone GGUF Activity manifest references remain")
 manifest.write_text(manifest_source, encoding="utf-8")
 
 for path in [main, router, manager, holder]:
