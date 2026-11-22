@@ -182,8 +182,8 @@ jobs:
           replacements = [
               ('applicationId "com.alibaba.mnnllm.android"',
                'applicationId "com.alibaba.mnnllm.android.localimport096"'),
-              ("versionCode 830", "versionCode 843"),
-              ('versionName "0.8.3"', 'versionName "0.9.5"'),
+              ("versionCode 830", "versionCode 844"),
+              ('versionName "0.8.3"', 'versionName "0.9.6"'),
           ]
           for old, new in replacements:
               if source.count(old) != 1:
