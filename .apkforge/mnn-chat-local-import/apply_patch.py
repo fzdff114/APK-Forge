@@ -52,7 +52,8 @@ def main() -> None:
         "import com.alibaba.mnnllm.android.modelist.ModelListManager\n"
         "import com.alibaba.mnnllm.android.modelist.LocalModelFolderImporter\n"
         "import com.alibaba.mnnllm.android.modelist.LocalModelArchiveImporter\n"
-        "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\n",
+        "import com.alibaba.mnnllm.android.modelist.LocalModelFormatInspector\n"
+        "import com.alibaba.mnnllm.android.modelist.LocalGgufModelImporter\n",
         "MainActivity imports (model list)",
     )
     main_activity = replace_once(
@@ -98,16 +99,27 @@ def main() -> None:
 
         lifecycleScope.launch {
             try {
-                val importedDirectory = withContext(Dispatchers.IO) {
-                    LocalModelFolderImporter.importFromTree(this@MainActivity, treeUri)
+                val importedGguf = withContext(Dispatchers.IO) {
+                    LocalGgufModelImporter.copyFromTree(this@MainActivity, treeUri)
                 }
-                ModelListManager.clearModelCache()
-                ModelListManager.notifyModelListMayChange(ModelListManager.ChangeReason.MANUAL_REFRESH)
-                Toast.makeText(
-                    this@MainActivity,
-                    getString(R.string.local_model_import_success, importedDirectory.name),
-                    Toast.LENGTH_LONG
-                ).show()
+                if (importedGguf.isNotEmpty()) {
+                    ModelListManager.clearModelCache()
+                    ModelListManager.notifyModelListMayChange(ModelListManager.ChangeReason.MANUAL_REFRESH)
+                    val message = if (importedGguf.size == 1) "GGUF 模型已导入：${importedGguf.single().name}"
+                        else "已导入 ${importedGguf.size} 个 GGUF 模型"
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                } else {
+                    val importedDirectory = withContext(Dispatchers.IO) {
+                        LocalModelFolderImporter.importFromTree(this@MainActivity, treeUri)
+                    }
+                    ModelListManager.clearModelCache()
+                    ModelListManager.notifyModelListMayChange(ModelListManager.ChangeReason.MANUAL_REFRESH)
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.local_model_import_success, importedDirectory.name),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to import a local model from the file picker", e)
                 Toast.makeText(
@@ -165,6 +177,13 @@ def main() -> None:
                         } ?: byteArrayOf()
                         LocalModelFormatInspector.inspectFile(displayName, header)
                     }
+                    val importedGguf = if (detection.format == LocalModelFormatInspector.Format.GGUF &&
+                        detection.state != LocalModelFormatInspector.State.INVALID
+                    ) {
+                        LocalGgufModelImporter.copyFromUri(
+                            this@MainActivity, uri, displayName
+                        )
+                    } else null
                     val importedDirectory = if (detection.format == LocalModelFormatInspector.Format.ZIP &&
                         detection.state != LocalModelFormatInspector.State.INVALID
                     ) {
@@ -176,18 +195,19 @@ def main() -> None:
                     } else {
                         null
                     }
-                    Pair(importedDirectory, detection)
+                    Pair(importedGguf ?: importedDirectory, detection)
                 }
 
                 val importedDirectory = result.first
                 if (importedDirectory != null) {
                     ModelListManager.clearModelCache()
                     ModelListManager.notifyModelListMayChange(ModelListManager.ChangeReason.MANUAL_REFRESH)
-                    Toast.makeText(
-                        this@MainActivity,
-                        getString(R.string.local_model_import_success, importedDirectory.name),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val successMessage = if (result.second.format == LocalModelFormatInspector.Format.GGUF) {
+                        "GGUF 模型已导入并加入本地模型列表：${importedDirectory.name}"
+                    } else {
+                        getString(R.string.local_model_import_success, importedDirectory.name)
+                    }
+                    Toast.makeText(this@MainActivity, successMessage, Toast.LENGTH_LONG).show()
                 } else {
                     Toast.makeText(this@MainActivity, result.second.details, Toast.LENGTH_LONG).show()
                 }
