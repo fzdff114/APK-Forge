@@ -181,6 +181,11 @@ settings_new = '''        val isGguf = modelItem.modelId?.startsWith("local-gguf
         popupMenu.menu.findItem(R.id.menu_settings).setVisible(!isGguf)'''
 replace_once(holder, settings_old, settings_new, "Hide MNN-only model settings for GGUF")
 
+settings_old = '''        popupMenu.menu.findItem(R.id.menu_settings).setVisible(true)'''
+settings_new = '''        val isGguf = modelItem.modelId?.startsWith("local-gguf/") == true
+        popupMenu.menu.findItem(R.id.menu_settings).setVisible(!isGguf)'''
+replace_once(holder, settings_old, settings_new, "Hide MNN-only model settings for GGUF")
+
 # After import, refresh the main MNN Local Models tab instead of opening a GGUF-only Activity.
 main = java / "main/MainActivity.kt"
 main_source = main.read_text(encoding="utf-8")
