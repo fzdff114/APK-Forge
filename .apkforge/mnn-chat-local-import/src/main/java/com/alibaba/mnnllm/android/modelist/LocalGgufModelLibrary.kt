@@ -22,6 +22,21 @@ object LocalGgufModelLibrary {
 
     fun root(contextFiles: File): File = File(contextFiles, "gguf_models")
 
+    /**
+     * Resolves an app-managed GGUF ID back to its verified model folder.
+     * The ID contains only the generated folder name; callers never accept an arbitrary path.
+     */
+    fun findCompleteEntry(root: File, modelId: String): Entry? {
+        val prefix = "local-gguf/"
+        if (!modelId.startsWith(prefix)) return null
+        val folderName = modelId.removePrefix(prefix)
+        if (folderName.isBlank() || folderName == "." || folderName == ".." ||
+            folderName.contains('/') || folderName.contains('\\')) return null
+        return scan(root).firstOrNull {
+            it.folder.name == folderName && it.isComplete && it.primaryFile.isFile
+        }
+    }
+
     fun scan(root: File): List<Entry> {
         val directories = root.listFiles()?.filter { it.isDirectory } ?: return emptyList()
         val entries = ArrayList<Entry>()

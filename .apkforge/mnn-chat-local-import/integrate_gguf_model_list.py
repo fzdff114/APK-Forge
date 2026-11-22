@@ -103,26 +103,26 @@ replace_once(manager, source_old, source_new, "GGUF source tag")
 router = java / "chat/ChatRouter.kt"
 router_source = router.read_text(encoding="utf-8")
 import_anchor = "import com.alibaba.mnnllm.android.model.ModelUtils\n"
-if "import com.alibaba.mnnllm.android.modelist.ModelListManager\n" not in router_source:
-    router_source = router_source.replace(import_anchor, import_anchor + "import com.alibaba.mnnllm.android.modelist.ModelListManager\n", 1)
+if "import com.alibaba.mnnllm.android.modelist.LocalGgufModelLibrary\n" not in router_source:
+    router_source = router_source.replace(import_anchor, import_anchor + "import com.alibaba.mnnllm.android.modelist.LocalGgufModelLibrary\n", 1)
 run_anchor = '''    fun startRun(context: Context, modelIdParam: String, destModelDir:String?, sessionId: String?) {
         Log.d(TAG, "startRun modelIdParam: $modelIdParam destModelDir: $destModelDir sessionId: $sessionId")
 '''
 run_addition = '''    fun startRun(context: Context, modelIdParam: String, destModelDir:String?, sessionId: String?) {
         Log.d(TAG, "startRun modelIdParam: $modelIdParam destModelDir: $destModelDir sessionId: $sessionId")
         if (modelIdParam.startsWith("local-gguf/")) {
-            val modelItem = ModelListManager.getModelIdModelMap()[modelIdParam]
-            val modelPath = destModelDir ?: modelItem?.localPath
-            val modelFile = modelPath?.let { File(it) }
-            if (modelFile == null || !modelFile.isFile) {
-                Toast.makeText(context, "GGUF 模型文件不存在或已被移动，请刷新模型列表。", Toast.LENGTH_LONG).show()
+            val ggufRoot = File(context.getExternalFilesDir(null) ?: context.filesDir, "gguf_models")
+            val entry = LocalGgufModelLibrary.findCompleteEntry(ggufRoot, modelIdParam)
+            val modelFile = entry?.primaryFile
+            if (entry == null || modelFile == null || !modelFile.isFile) {
+                Toast.makeText(context, "GGUF 模型文件不存在或分片不完整，请返回本地模型列表刷新。", Toast.LENGTH_LONG).show()
                 return
             }
             CrashReportContext.setCurrentModel(modelIdParam, sessionId)
             val intent = Intent(context, ChatActivity::class.java).apply {
                 putExtra("chatSessionId", sessionId)
                 putExtra("modelId", modelIdParam)
-                putExtra("modelName", modelItem?.modelName ?: modelFile.nameWithoutExtension)
+                putExtra("modelName", entry.displayName)
                 putExtra("ggufModelPath", modelFile.absolutePath)
                 if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

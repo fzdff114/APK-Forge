@@ -2,6 +2,7 @@ package com.alibaba.mnnllm.android.modelist
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -22,6 +23,25 @@ class LocalGgufModelLibraryTest {
             assertEquals("Qwen2.5-0.5B-Q4_K_M", entries.single().displayName)
             assertEquals(4L, entries.single().totalBytes)
             assertTrue(entries.single().isComplete)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun resolvesOnlyCompleteAppManagedModelIds() {
+        val root = Files.createTempDirectory("gguf-library-route").toFile()
+        try {
+            val folder = File(root, "qwen_import_123").apply { mkdirs() }
+            val model = File(folder, "Qwen2.5-0.5B-Q4_K_M.gguf")
+            model.writeBytes(byteArrayOf(1, 2, 3))
+
+            val entry = LocalGgufModelLibrary.findCompleteEntry(root, "local-gguf/qwen_import_123")
+
+            assertEquals(model.canonicalFile, entry?.primaryFile?.canonicalFile)
+            assertNull(LocalGgufModelLibrary.findCompleteEntry(root, "local-gguf/../outside"))
+            assertNull(LocalGgufModelLibrary.findCompleteEntry(root, "local-gguf/missing"))
+            assertNull(LocalGgufModelLibrary.findCompleteEntry(root, "other/qwen_import_123"))
         } finally {
             root.deleteRecursively()
         }
