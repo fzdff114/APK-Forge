@@ -150,6 +150,8 @@ menu_old = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = t
 menu_new = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = !isGgufSession
         menu.findItem(R.id.menu_item_benchmark_test).isVisible =
             benchmarkModule.enabled && !isGgufSession
+        // GGUF currently has no trustworthy MNN-compatible prefill/decode token counters.
+        menu.findItem(R.id.show_performance_metrics).isVisible = !isGgufSession
         // GGUF sessions are text-only and use llama.cpp, not the MNN audio/template backend.
         menu.findItem(R.id.start_voice_chat).isVisible = !isDiffusion && !isGgufSession
 '''
@@ -167,6 +169,14 @@ api_new = '''            if (!isGgufSession && isApiServiceEnabled(this)) {
 if source.count(api_old) != 1:
     raise SystemExit("ChatActivity: API service startup anchor not unique")
 source = source.replace(api_old, api_new, 1)
+
+benchmark_old = '''        recentItem.benchmarkInfo = ModelUtils.generateBenchMarkString(benchMarkResult)'''
+benchmark_new = '''        // MNN-specific performance fields are not available from the current llama.cpp adapter.
+        recentItem.benchmarkInfo = if (isGgufSession) null
+            else ModelUtils.generateBenchMarkString(benchMarkResult)'''
+if source.count(benchmark_old) != 1:
+    raise SystemExit("ChatActivity: benchmark result anchor not unique")
+source = source.replace(benchmark_old, benchmark_new, 1)
 
 activity.write_text(source, encoding="utf-8")
 
