@@ -188,7 +188,7 @@ class GgufApiChatService {
             output_tokens = (metrics["decode_len"] as? Long)?.toInt() ?: 0
         )
         val response = AnthropicAdapter.createNonStreamResponse(
-            responseId = "msg_\${System.currentTimeMillis()}",
+            responseId = "msg_${System.currentTimeMillis()}",
             model = modelId,
             text = text.toString(),
             usage = usage
@@ -203,7 +203,7 @@ class GgufApiChatService {
         prompt: ApiPrompt,
         maxTokens: Int
     ) {
-        val responseId = "msg_\${System.currentTimeMillis()}"
+        val responseId = "msg_${System.currentTimeMillis()}"
         call.respond(SSEServerContent(call) {
             heartbeat {
                 period = 3.seconds
@@ -227,7 +227,7 @@ class GgufApiChatService {
                         object : GenerateProgressListener {
                             override fun onProgress(progress: String?): Boolean {
                                 if (progress.isNullOrEmpty()) return false
-                                val data = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":\${org.json.JSONObject.quote(progress)}}}"""
+                                val data = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":${org.json.JSONObject.quote(progress)}}}"""
                                 return channel.trySend(ServerSentEvent(event = "content_block_delta", data = data)).isFailure
                             }
                         }
