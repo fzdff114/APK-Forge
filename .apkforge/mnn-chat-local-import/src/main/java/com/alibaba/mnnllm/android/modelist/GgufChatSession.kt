@@ -146,16 +146,25 @@ class GgufChatSession(
         val engine = ensureLoaded()
         val startedAt = System.nanoTime()
         val rawResponse = StringBuilder()
-        runBlocking(Dispatchers.IO) {
-            engine.setSystemPrompt(
-                systemPrompt.takeIf { it.isNotBlank() } ?: DEFAULT_API_SYSTEM_PROMPT
-            )
-            engine.sendUserPrompt(prompt, maxNewTokens.coerceIn(1, MAX_API_TOKENS))
-                .takeWhile { token ->
-                    rawResponse.append(token)
-                    !progressListener.onProgress(token)
-                }
-                .collect { }
+        val previousChatPrompt = buildSystemPrompt()
+        val apiPrompt = systemPrompt.takeIf { it.isNotBlank() } ?: DEFAULT_API_SYSTEM_PROMPT
+        try {
+            runBlocking(Dispatchers.IO) {
+                engine.resetConversation(apiPrompt)
+                engine.sendUserPrompt(prompt, maxNewTokens.coerceIn(1, MAX_API_TOKENS))
+                    .takeWhile { token ->
+                        rawResponse.append(token)
+                        !progressListener.onProgress(token)
+                    }
+                    .collect { }
+            }
+        } finally {
+            // Restore the UI chat context after this stateless API request.
+            runCatching {
+                runBlocking(Dispatchers.IO) { engine.resetConversation(previousChatPrompt) }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to restore GGUF chat context after API request", error)
+            }
         }
         val elapsedMicros = ((System.nanoTime() - startedAt) / 1_000L).coerceAtLeast(0L)
         hashMapOf(
