@@ -83,15 +83,15 @@ new_session_branch = '''        val ggufModelPath = intent.getStringExtra("ggufM
 if source.count(old_session_branch) != 1:
     raise SystemExit("ChatPresenter: original session factory block changed")
 source = source.replace(old_session_branch, new_session_branch, 1)
-registry_anchor = "        sessionId = chatSession.sessionId\\n"
+registry_anchor = "        sessionId = chatSession.sessionId\n"
 if source.count(registry_anchor) != 1:
     raise SystemExit("ChatPresenter: session assignment anchor not unique")
 source = source.replace(
     registry_anchor,
     registry_anchor
-    + "        if (chatSession is GgufChatSession) {\\n"
-    + "            GgufApiSessionRegistry.register(modelId, chatSession)\\n"
-    + "        }\\n",
+    + "        if (chatSession is GgufChatSession) {\n"
+    + "            GgufApiSessionRegistry.register(modelId, chatSession)\n"
+    + "        }\n",
     1
 )
 presenter.write_text(source, encoding="utf-8")
