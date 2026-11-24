@@ -90,7 +90,7 @@ source = source.replace(
     registry_anchor,
     registry_anchor
     + "        if (chatSession is GgufChatSession) {\n"
-    + "            GgufApiSessionRegistry.register(modelId, chatSession)\n"
+    + "            chatSession = GgufApiSessionRegistry.register(modelId, chatSession as GgufChatSession)\n"
     + "        } else {\n"
     + "            GgufApiSessionRegistry.clear()\n"
     + "        }\n",
