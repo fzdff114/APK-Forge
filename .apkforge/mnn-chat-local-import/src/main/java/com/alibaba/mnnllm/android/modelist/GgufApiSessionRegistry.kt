@@ -31,10 +31,21 @@ object GgufApiSessionRegistry {
     }
 
     fun attachApiService(modelId: String?) {
+        val release: GgufChatSession?
         synchronized(lock) {
-            apiModelId = modelId?.takeIf { it.startsWith("local-gguf/") && sessions.containsKey(it) }
+            val previousModelId = apiModelId
+            val nextModelId = modelId?.takeIf {
+                it.startsWith("local-gguf/") && sessions.containsKey(it)
+            }
+            apiModelId = nextModelId
+            release = if (
+                previousModelId != null &&
+                previousModelId != nextModelId &&
+                previousModelId != chatModelId
+            ) sessions.remove(previousModelId) else null
             activeModelId = apiModelId ?: chatModelId
         }
+        release?.release()
     }
 
     fun detachChat(session: GgufChatSession) {
