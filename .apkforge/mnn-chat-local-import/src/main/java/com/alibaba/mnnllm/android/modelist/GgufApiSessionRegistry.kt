@@ -24,8 +24,10 @@ object GgufApiSessionRegistry {
         activeModelId = null
     }
 
+    @Synchronized
     fun currentModelId(): String? = activeModelId
 
+    @Synchronized
     fun getActiveSession(modelId: String): GgufChatSession? {
         if (!modelId.startsWith("local-gguf/")) return null
         return if (activeModelId == modelId) activeSession else null
