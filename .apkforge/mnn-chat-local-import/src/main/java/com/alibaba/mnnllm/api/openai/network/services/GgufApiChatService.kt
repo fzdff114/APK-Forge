@@ -27,8 +27,8 @@ import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * OpenAI-compatible, text-only API adapter for the currently active GGUF session.
- * It deliberately does not route GGUF requests through MNN's LlmSession/JNI backend.
+ * OpenAI-compatible and Anthropic text-only API adapter for the active GGUF session.
+ * GGUF requests use llama.cpp directly and never pass through MNN's LlmSession/JNI backend.
  */
 class GgufApiChatService {
     private val formatter = ChatResponseFormatter()
@@ -211,7 +211,7 @@ class GgufApiChatService {
             }
             send(ServerSentEvent(
                 event = "message_start",
-                data = """{"type":"message_start","message":{"id":"$responseId","type":"message","role":"assistant","model":"$modelId","content":[],"usage":{"input_tokens":0,"output_tokens":0}}}"""
+                data = """{"type":"message_start","message":{"id":${org.json.JSONObject.quote(responseId)},"type":"message","role":"assistant","model":${org.json.JSONObject.quote(modelId)},"content":[],"usage":{"input_tokens":0,"output_tokens":0}}}"""
             ))
             send(ServerSentEvent(
                 event = "content_block_start",
