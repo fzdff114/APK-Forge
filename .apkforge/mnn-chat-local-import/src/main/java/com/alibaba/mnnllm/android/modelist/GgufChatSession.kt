@@ -204,6 +204,21 @@ class GgufChatSession(
         )
     }
 
+    /**
+     * Reattach an already API-owned session to a newly opened chat screen.
+     * Release the current native context so load() can rebuild it from the selected history.
+     */
+    fun prepareForChat(sessionId: String?, history: List<ChatDataItem>?) {
+        synchronized(lock) {
+            val keepExistingHistory = sessionId == currentSessionId && history == null
+            val historyToRestore = if (keepExistingHistory) savedHistory else history
+            release()
+            currentSessionId = sessionId?.takeIf { it.isNotBlank() }
+                ?: System.currentTimeMillis().toString()
+            savedHistory = historyToRestore
+        }
+    }
+
     override fun reset(): String {
         release()
         currentSessionId = System.currentTimeMillis().toString()
