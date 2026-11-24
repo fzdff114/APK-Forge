@@ -328,6 +328,83 @@ if "ReportLlmSetConfigToFirebase" in jni or "g_jvm" in jni:
     raise SystemExit("Native Crashlytics JNI forwarding symbols remain")
 jni_path.write_text(jni, encoding="utf-8")
 
+# 8. Remove benchmark leaderboard upload and JSONL file upload paths.
+# Benchmarking remains local; users may still choose to share a rendered result image themselves.
+presenter_path = java / "benchmark/BenchmarkPresenter.kt"
+presenter = presenter_path.read_text(encoding="utf-8")
+presenter = presenter.replace("    private val leaderboardService = LeaderboardService()\n", "")
+presenter = presenter.replace(
+    """    // Feature toggle: true for leaderboard upload, false for share
+    // You can change this to false to test the share functionality
+    private val useLeaderboardUpload = false
+""",
+    ""
+)
+presenter = block(
+    presenter,
+    "    override fun onUploadToLeaderboardClicked() {",
+    "    override fun getCurrentState(): BenchmarkState {",
+    "    override fun getCurrentState(): BenchmarkState {",
+    "BenchmarkPresenter leaderboard upload handler"
+)
+presenter = presenter.replace("// Save results for leaderboard upload", "// Keep benchmark results locally for the result card")
+presenter_path.write_text(presenter, encoding="utf-8")
+
+contract_path = java / "benchmark/BenchmarkContract.kt"
+contract = contract_path.read_text(encoding="utf-8")
+for method in [
+    "        fun uploadToLeaderboard()\n",
+    "        fun showUploadProgress(message: String)\n",
+    "        fun hideUploadProgress()\n",
+    "        fun showRankInfo(rank: Int, totalUsers: Int)\n",
+    "        fun onUploadToLeaderboardClicked()\n",
+]:
+    if method not in contract:
+        raise SystemExit(f"BenchmarkContract leaderboard method missing: {method.strip()}")
+    contract = contract.replace(method, "")
+contract = contract.replace("        // Share and Leaderboard functionality\n", "        // Local result sharing only\n")
+contract_path.write_text(contract, encoding="utf-8")
+
+fragment_path = java / "benchmark/BenchmarkFragment.kt"
+fragment = fragment_path.read_text(encoding="utf-8")
+fragment = block(
+    fragment,
+    "    override fun uploadToLeaderboard() {",
+    "    private fun createBitmapFromView(view: View): Bitmap {",
+    "    private fun createBitmapFromView(view: View): Bitmap {",
+    "BenchmarkFragment leaderboard upload UI handlers"
+)
+fragment = fragment.replace(
+    '// For other text (like "Share", "Upload to Leaderboard"), hide icon and arrow',
+    '// For other button labels, hide icon and progress indicator'
+)
+fragment_path.write_text(fragment, encoding="utf-8")
+
+# These two classes contain no other call sites in the app and are now removed from the APK.
+for relative in [
+    "app/src/main/java/com/alibaba/mnnllm/android/benchmark/LeaderboardService.kt",
+    "app/src/main/java/com/alibaba/mnnllm/android/benchmark/BenchmarkTest.kt",
+]:
+    file_path = app / relative
+    if file_path.exists():
+        file_path.unlink()
+
+for relative in [
+    "app/src/main/res/values/strings.xml",
+    "app/src/main/res/values-zh-rCN/strings.xml",
+    "app/src/main/res/values-zh-rTW/strings.xml",
+]:
+    resource = app / relative
+    if resource.exists():
+        text = resource.read_text(encoding="utf-8")
+        text = re.sub(
+            r'^\s*<string\s+name="(?:upload_to_leaderboard|leaderboard_ranking|leaderboard_rank_info|leaderboard_rank_not_found)">.*?</string>\s*\n?',
+            "",
+            text,
+            flags=re.MULTILINE
+        )
+        resource.write_text(text, encoding="utf-8")
+
 # Remove obsolete debug-only reporting labels.
 for relative in [
     "app/src/main/res/values/strings.xml",
@@ -358,6 +435,22 @@ for root in [
                 raise SystemExit(f"Forbidden crash/analytics hook remains: {path} ({term})")
 if "com.google.firebase" in (app / "app/build.gradle").read_text(encoding="utf-8"):
     raise SystemExit("Firebase dependencies remain in app/build.gradle")
+
+# Fail the build if any app-side telemetry, leaderboard or benchmark-file uploader survives.
+for root in [app / "app/src/main/java", app / "app/src/main/cpp"]:
+    for path in list(root.rglob("*.kt")) + list(root.rglob("*.java")) + list(root.rglob("*.cpp")):
+        source = path.read_text(encoding="utf-8", errors="ignore")
+        for forbidden in [
+            "mnn-mnnchatleaderboard.ms.show",
+            "LeaderboardService",
+            "onUploadToLeaderboardClicked",
+            "uploadToLeaderboard",
+            "uploadJsonlFiles",
+            "uploadJsonlx",
+            "uploadInfoJsonString",
+        ]:
+            if forbidden in source:
+                raise SystemExit(f"Forbidden upload feature remains: {path} ({forbidden})")
 
 print("Firebase Crashlytics/Analytics SDKs, dependencies and plugin bindings removed.")
 print("Crash context forwarding, local crash-log capture/export and debug crash tests removed.")
