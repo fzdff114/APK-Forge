@@ -249,7 +249,7 @@ activity_main = app / "app/src/main/res/layout/activity_main.xml"
 layout = activity_main.read_text(encoding="utf-8")
 layout = sub_once(
     layout,
-    r'\s*<com\.nambimobile\.widgets\.efab\.FabOption\b(?:(?!</com\.nambimobile\.widgets\.efab\.FabOption>).)*android:onClick="onReportIssue"(?:(?!</com\.nambimobile\.widgets\.efab\.FabOption>).)*</com\.nambimobile\.widgets\.efab\.FabOption>',
+    r'\s*<com\.nambimobile\.widgets\.efab\.FabOption\b(?:(?!/>).)*android:onClick="onReportIssue"(?:(?!/>).)*/>',
     "", "issue-report floating button"
 )
 activity_main.write_text(layout, encoding="utf-8")
