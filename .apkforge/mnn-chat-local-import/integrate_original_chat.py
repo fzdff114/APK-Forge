@@ -207,4 +207,5 @@ source = source.replace(benchmark_old, benchmark_new, 1)
 activity.write_text(source, encoding="utf-8")
 
 print("GGUF ChatSession is now hosted by the original MNN ChatActivity.")
-print("Original ActivityChatBinding, ChatListComponent, ChatInputComponent and database history are retained.")\nprint("OpenAI-compatible local API settings and server startup remain enabled for GGUF.")
+print("Original ActivityChatBinding, ChatListComponent, ChatInputComponent and database history are retained.")
+print("OpenAI-compatible local API settings and server startup remain enabled for GGUF.")
