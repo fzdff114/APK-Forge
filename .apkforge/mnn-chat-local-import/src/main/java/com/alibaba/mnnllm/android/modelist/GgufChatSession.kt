@@ -132,7 +132,7 @@ class GgufChatSession(
     }
 
     /**
-     * Stateless OpenAI API turn. setSystemPrompt() resets llama.cpp's prior chat/KV state,
+     * Stateless OpenAI API turn. resetConversation() resets llama.cpp's prior chat/KV state,
      * then the complete request transcript is sent as one text-only user prompt.
      * Token usage is reported as a character-count estimate because this Android binding
      * does not currently expose the tokenizer count.
