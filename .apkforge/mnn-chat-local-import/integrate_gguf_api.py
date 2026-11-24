@@ -63,6 +63,9 @@ for line in [
             raise SystemExit("ChatRoutes import insertion anchor missing")
         source = source.replace(route_import, route_import + line, 1)
 
+# Persist the import edits before replace_once() rereads ChatRoutes.kt from disk.
+routes.write_text(source, encoding="utf-8")
+
 route_old = "        MNNChatService.processChatCompletion(call, chatRequest, traceId)"
 route_new = '''        val requestedModel = chatRequest.model?.trim()
         val selectedGgufModel = if (requestedModel?.startsWith("local-gguf/") == true) {
