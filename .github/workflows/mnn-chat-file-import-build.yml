@@ -329,8 +329,28 @@ jobs:
           SCRIPT="$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/integrate_gguf_api.py"
           python3 -m py_compile "$SCRIPT"
           python3 "$SCRIPT" "$APP_ROOT"
-          grep -n 'GgufApiChatService' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
-          grep -n 'GgufApiSessionRegistry.currentModelId' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/api/openai/network/services/MNNModelsService.kt"
+          # Re-stage critical GGUF API symbols after all UI/model-list patchers.
+          # The Android app compiles the default src/main/java tree; these are the
+          # exact package paths imported by ChatRoutes and the model-list screen.
+          PATCH_JAVA="$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/src/main/java"
+          APP_JAVA="$APP_ROOT/app/src/main/java"
+          for REL in \
+            "com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt" \
+            "com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt" \
+            "com/alibaba/mnnllm/api/openai/network/services/GgufApiChatService.kt"; do
+            test -s "$PATCH_JAVA/$REL"
+            mkdir -p "$APP_JAVA/$(dirname "$REL")"
+            cp "$PATCH_JAVA/$REL" "$APP_JAVA/$REL"
+            test -s "$APP_JAVA/$REL"
+          done
+          grep -q '^package com.alibaba.mnnllm.android.modelist' "$APP_JAVA/com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt"
+          grep -q 'object GgufApiSessionRegistry' "$APP_JAVA/com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt"
+          grep -q 'object LocalGgufModelLibrary' "$APP_JAVA/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt"
+          grep -q 'class GgufApiChatService' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/services/GgufApiChatService.kt"
+          grep -q 'import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
+          grep -q 'import io.ktor.http.HttpStatusCode' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
+          grep -n 'GgufApiChatService' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
+          grep -n 'GgufApiSessionRegistry.currentModelId' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/services/MNNModelsService.kt"
       - name: Remove crash reporting, telemetry, and developer issue submission
         shell: bash
         run: |
