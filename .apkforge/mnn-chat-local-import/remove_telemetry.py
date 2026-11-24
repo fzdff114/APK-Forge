@@ -30,11 +30,26 @@ root_gradle.write_text(root, encoding="utf-8")
 
 app_gradle = app / "app/build.gradle"
 gradle = app_gradle.read_text(encoding="utf-8")
-a = gradle.find("def enableFirebase =")
-b = gradle.find("if (useLocalMarkwon && !localMarkwonAarsReady) {", a)
-if a < 0 or b < 0:
-    raise SystemExit("Firebase build-configuration block not found")
-gradle = gradle[:a] + "def enableFirebase = false\n" + gradle[b:]
+gradle, enable_count = re.subn(
+    r"^def enableFirebase = .*$",
+    "def enableFirebase = false",
+    gradle,
+    count=1,
+    flags=re.MULTILINE
+)
+if enable_count != 1:
+    raise SystemExit("Firebase build switch definition not found")
+
+# Remove only the Firebase conditional plugin block. Preserve Markwon, compiler,
+# Android SDK, and other unrelated Gradle variables that follow it.
+gradle, firebase_block_count = re.subn(
+    r"(?ms)^if \\(enableFirebase && hasGoogleServicesConfig\\) \\{\\n.*?^\\}\\n",
+    "",
+    gradle,
+    count=1
+)
+if firebase_block_count != 1:
+    raise SystemExit("Firebase conditional plugin block not found")
 for needle in [
     "apply plugin: 'com.google.gms.google-services'",
     "apply plugin: 'com.google.firebase.crashlytics'",
