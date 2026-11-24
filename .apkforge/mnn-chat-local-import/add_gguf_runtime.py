@@ -61,6 +61,27 @@ ai_chat = ai_chat.replace(
     "llama_log_set(aichat_capture_log_callback, nullptr);",
     1
 )
+
+api_reset_anchor = """Java_com_arm_aichat_internal_InferenceEngineImpl_processSystemPrompt(
+        JNIEnv *env,
+        jobject /*unused*/,
+        jstring jsystem_prompt
+) {
+    // Reset long-term & short-term states
+    reset_long_term_states();
+    reset_short_term_states();"""
+api_reset_replacement = """Java_com_arm_aichat_internal_InferenceEngineImpl_processSystemPrompt(
+        JNIEnv *env,
+        jobject /*unused*/,
+        jstring jsystem_prompt
+) {
+    // Reset long-term, short-term and sampler states for a clean API request.
+    reset_long_term_states();
+    reset_short_term_states();
+    if (g_sampler != nullptr) common_sampler_reset(g_sampler);"""
+if ai_chat.count(api_reset_anchor) != 1:
+    raise SystemExit("Could not add sampler reset to native GGUF system prompt handler")
+ai_chat = ai_chat.replace(api_reset_anchor, api_reset_replacement, 1)
 load_anchor = '''Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
     llama_model_params model_params = llama_model_default_params();'''
 load_repl = '''Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
@@ -330,6 +351,34 @@ new_prepare_error = """prepare().let {
 if engine.count(old_prepare_error) != 1:
     raise SystemExit("Could not expose native context initialization diagnostics")
 engine = engine.replace(old_prepare_error, new_prepare_error, 1)
+reset_anchor = """    /**
+     * Send plain text user prompt to LLM, which starts generating tokens in a [Flow]
+     */"""
+reset_impl = """    override suspend fun resetConversation(systemPrompt: String) =
+        withContext(llamaDispatcher) {
+            require(systemPrompt.isNotBlank()) { "Cannot process empty system prompt!" }
+            check(
+                _state.value is InferenceEngine.State.ModelReady ||
+                    _state.value is InferenceEngine.State.Error
+            ) {
+                "Cannot reset conversation in ${_state.value.javaClass.simpleName}!"
+            }
+            _readyForSystemPrompt = true
+            _state.value = InferenceEngine.State.ProcessingSystemPrompt
+            processSystemPrompt(systemPrompt).let { result ->
+                if (result != 0) {
+                    RuntimeException("Failed to reset GGUF conversation: $result").also {
+                        _state.value = InferenceEngine.State.Error(it)
+                        throw it
+                    }
+                }
+            }
+            _readyForSystemPrompt = false
+            _state.value = InferenceEngine.State.ModelReady
+        }
+if engine.count(reset_anchor) != 1:
+    raise SystemExit("Could not insert repeatable GGUF conversation reset implementation")
+engine = engine.replace(reset_anchor, reset_impl, 1)
 anchor = """            }
     }
 
