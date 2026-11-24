@@ -175,8 +175,8 @@ menu_new = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = !
         // GGUF currently has no trustworthy MNN-compatible prefill/decode token counters.
         menu.findItem(R.id.show_performance_metrics).isVisible = !isGgufSession
         // These entries depend on the MNN API/config backend and are not available to GGUF yet.
-        menu.findItem(R.id.menu_item_api_settings).isVisible = !isGgufSession
-        menu.findItem(R.id.menu_item_api_console).isVisible = !isGgufSession
+        menu.findItem(R.id.menu_item_api_settings).isVisible = true
+        menu.findItem(R.id.menu_item_api_console).isVisible = true
         menu.findItem(R.id.menu_item_config_info).isVisible = !isGgufSession
         // GGUF sessions are text-only and use llama.cpp, not the MNN audio/template backend.
         menu.findItem(R.id.start_voice_chat).isVisible = !isDiffusion && !isGgufSession
@@ -188,7 +188,7 @@ api_old = '''            if (isApiServiceEnabled(this)) {
                 ApiServiceManager.startApiService(this, modelId)
             }
 '''
-api_new = '''            if (!isGgufSession && isApiServiceEnabled(this)) {
+api_new = '''            if (isApiServiceEnabled(this)) {
                 ApiServiceManager.startApiService(this, modelId)
             }
 '''
@@ -207,4 +207,4 @@ source = source.replace(benchmark_old, benchmark_new, 1)
 activity.write_text(source, encoding="utf-8")
 
 print("GGUF ChatSession is now hosted by the original MNN ChatActivity.")
-print("Original ActivityChatBinding, ChatListComponent, ChatInputComponent and database history are retained.")
+print("Original ActivityChatBinding, ChatListComponent, ChatInputComponent and database history are retained.")\nprint("OpenAI-compatible local API settings and server startup remain enabled for GGUF.")
