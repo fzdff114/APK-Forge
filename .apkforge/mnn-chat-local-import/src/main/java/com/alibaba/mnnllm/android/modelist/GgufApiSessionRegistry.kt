@@ -11,15 +11,30 @@ object GgufApiSessionRegistry {
     @Volatile private var chatModelId: String? = null
     @Volatile private var apiModelId: String? = null
 
-    fun register(modelId: String, session: GgufChatSession) {
-        if (!modelId.startsWith("local-gguf/")) return
+    fun register(modelId: String, session: GgufChatSession): GgufChatSession {
+        if (!modelId.startsWith("local-gguf/")) return session
         val previous: GgufChatSession?
+        val selected: GgufChatSession
         synchronized(lock) {
-            previous = sessions.put(modelId, session)?.takeIf { it !== session && apiModelId != modelId }
-            chatModelId = modelId
-            activeModelId = modelId
+            val existing = sessions[modelId]
+            if (existing != null && existing !== session && apiModelId == modelId) {
+                existing.prepareForChat(session.sessionId, session.getHistory())
+                chatModelId = modelId
+                activeModelId = modelId
+                selected = existing
+                previous = null
+            } else {
+                previous = sessions.put(modelId, session)?.takeIf {
+                    it !== session && apiModelId != modelId
+                }
+                chatModelId = modelId
+                activeModelId = modelId
+                selected = session
+            }
         }
         previous?.release()
+        if (selected !== session) session.release()
+        return selected
     }
 
     fun currentModelId(): String? = synchronized(lock) {
