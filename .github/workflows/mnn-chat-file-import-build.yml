@@ -330,27 +330,45 @@ jobs:
           python3 -m py_compile "$SCRIPT"
           python3 "$SCRIPT" "$APP_ROOT"
           # Re-stage critical GGUF API symbols after all UI/model-list patchers.
-          # The Android app compiles the default src/main/java tree; these are the
-          # exact package paths imported by ChatRoutes and the model-list screen.
-          PATCH_JAVA="$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/src/main/java"
-          APP_JAVA="$APP_ROOT/app/src/main/java"
-          for REL in \
-            "com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt" \
-            "com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt" \
-            "com/alibaba/mnnllm/api/openai/network/services/GgufApiChatService.kt"; do
-            test -s "$PATCH_JAVA/$REL"
-            mkdir -p "$APP_JAVA/$(dirname "$REL")"
-            cp "$PATCH_JAVA/$REL" "$APP_JAVA/$REL"
-            test -s "$APP_JAVA/$REL"
-          done
-          grep -q '^package com.alibaba.mnnllm.android.modelist' "$APP_JAVA/com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt"
-          grep -q 'object GgufApiSessionRegistry' "$APP_JAVA/com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt"
-          grep -q 'object LocalGgufModelLibrary' "$APP_JAVA/com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt"
-          grep -q 'class GgufApiChatService' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/services/GgufApiChatService.kt"
-          grep -q 'import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
-          grep -q 'import io.ktor.http.HttpStatusCode' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
-          grep -n 'GgufApiChatService' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt"
-          grep -n 'GgufApiSessionRegistry.currentModelId' "$APP_JAVA/com/alibaba/mnnllm/api/openai/network/services/MNNModelsService.kt"
+          python3 - "$GITHUB_WORKSPACE/.apkforge/mnn-chat-local-import/src/main/java" "$APP_ROOT/app/src/main/java" <<'PY'
+          from pathlib import Path
+          import shutil
+          import sys
+
+          source_root, app_root = map(Path, sys.argv[1:])
+          required = [
+              "com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt",
+              "com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt",
+              "com/alibaba/mnnllm/api/openai/network/services/GgufApiChatService.kt",
+          ]
+          for relative in required:
+              source = source_root / relative
+              target = app_root / relative
+              if not source.is_file() or source.stat().st_size == 0:
+                  raise SystemExit(f"Missing GGUF source to stage: {source}")
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, target)
+              if not target.is_file() or target.stat().st_size == 0:
+                  raise SystemExit(f"Failed to stage GGUF source: {target}")
+              print(f"Staged {relative} ({target.stat().st_size} bytes)")
+
+          checks = [
+              ("com/alibaba/mnnllm/android/modelist/GgufApiSessionRegistry.kt", "object GgufApiSessionRegistry"),
+              ("com/alibaba/mnnllm/android/modelist/LocalGgufModelLibrary.kt", "object LocalGgufModelLibrary"),
+              ("com/alibaba/mnnllm/api/openai/network/services/GgufApiChatService.kt", "class GgufApiChatService"),
+              ("com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt", "import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry"),
+              ("com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt", "import io.ktor.http.HttpStatusCode"),
+              ("com/alibaba/mnnllm/api/openai/network/routes/ChatRoutes.kt", "GgufApiChatService().processChatCompletion"),
+              ("com/alibaba/mnnllm/api/openai/network/services/MNNModelsService.kt", "GgufApiSessionRegistry.currentModelId()"),
+          ]
+          for relative, expected in checks:
+              file = app_root / relative
+              if not file.is_file():
+                  raise SystemExit(f"Missing Android source file: {file}")
+              if expected not in file.read_text(encoding="utf-8"):
+                  raise SystemExit(f"GGUF API integration check failed: {relative}: {expected}")
+              print(f"Verified {relative}: {expected}")
+          PY
       - name: Remove crash reporting, telemetry, and developer issue submission
         shell: bash
         run: |
