@@ -111,49 +111,49 @@ print("Multimodal requests are rejected explicitly instead of being silently dro
 coordinator = java / "api/openai/service/ApiServiceCoordinator.kt"
 replace_once(
     coordinator,
-    "import com.alibaba.mnnllm.android.llm.LlmSession\\n",
-    "import com.alibaba.mnnllm.android.llm.LlmSession\\n"
-    "import com.alibaba.mnnllm.android.llm.ChatSession\\n"
-    "import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry\\n",
+    'import com.alibaba.mnnllm.android.llm.LlmSession\n',
+    'import com.alibaba.mnnllm.android.llm.LlmSession\n'
+    'import com.alibaba.mnnllm.android.llm.ChatSession\n'
+    'import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry\n',
     "API coordinator GGUF session imports"
 )
 replace_once(
     coordinator,
     "    private fun resolveRuntimeSessionForStart(modelId: String?): LlmSession? {",
-    "    private fun resolveRuntimeSessionForStart(modelId: String?): ChatSession? {\\n"
-    "        if (modelId?.startsWith(\\\"local-gguf/\\\") == true) {\\n"
-    "            return GgufApiSessionRegistry.getActiveSession(modelId)\\n"
-    "        }",
+    '    private fun resolveRuntimeSessionForStart(modelId: String?): ChatSession? {\n'
+    '        if (modelId?.startsWith("local-gguf/") == true) {\n'
+    '            return GgufApiSessionRegistry.getActiveSession(modelId)\n'
+    '        }',
     "API coordinator accepts registered GGUF sessions"
 )
 
 # Keep the API session registered while the foreground service is running.
 service = java / "api/openai/service/OpenAIService.kt"
-service_import = "import com.alibaba.mnnllm.android.chat.ChatActivity\\n"
+service_import = 'import com.alibaba.mnnllm.android.chat.ChatActivity\n'
 replace_once(
     service,
     service_import,
-    service_import + "import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry\\n",
+    service_import + 'import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry\n',
     "OpenAI service GGUF registry import"
 )
 replace_once(
     service,
-    "        serviceScope.launch {\\n            val startSuccess = coordinator.startServer(startModelId)",
-    "        serviceScope.launch {\\n"
-    "            if (startModelId?.startsWith(\\\"local-gguf/\\\") == true) {\\n"
-    "                GgufApiSessionRegistry.attachApiService(startModelId)\\n"
-    "            } else {\\n"
-    "                GgufApiSessionRegistry.attachApiService(null)\\n"
-    "            }\\n"
-    "            val startSuccess = coordinator.startServer(startModelId)\\n"
-    "            if (!startSuccess) GgufApiSessionRegistry.detachApiService()",
+    '        serviceScope.launch {\n            val startSuccess = coordinator.startServer(startModelId)',
+    '        serviceScope.launch {\n'
+    '            if (startModelId?.startsWith("local-gguf/") == true) {\n'
+    '                GgufApiSessionRegistry.attachApiService(startModelId)\n'
+    '            } else {\n'
+    '                GgufApiSessionRegistry.attachApiService(null)\n'
+    '            }\n'
+    '            val startSuccess = coordinator.startServer(startModelId)\n'
+    '            if (!startSuccess) GgufApiSessionRegistry.detachApiService()',
     "OpenAI service retains GGUF session while API is active"
 )
 replace_once(
     service,
-    "        //clearglobalmodelID\\n",
-    "        GgufApiSessionRegistry.detachApiService()\\n"
-    "        //clearglobalmodelID\\n",
+    '        //clearglobalmodelID\n',
+    '        GgufApiSessionRegistry.detachApiService()\n'
+    '        //clearglobalmodelID\n',
     "OpenAI service releases GGUF API ownership on shutdown"
 )
 
@@ -161,46 +161,46 @@ replace_once(
 presenter = java / "android/chat/ChatPresenter.kt"
 replace_once(
     presenter,
-    "                    } else {\\n"
-    "                        Log.d(TAG, \\"Final cleanup: Resetting and releasing non-LLM session\\")\\n"
-    "                        chatSession.reset()\\n"
-    "                        chatSession.release()\\n"
-    "                    }",
-    "                    } else if (chatSession is GgufChatSession) {\\n"
-    "                        GgufApiSessionRegistry.detachChat(chatSession as GgufChatSession)\\n"
-    "                    } else {\\n"
-    "                        Log.d(TAG, \\"Final cleanup: Resetting and releasing non-LLM session\\")\\n"
-    "                        chatSession.reset()\\n"
-    "                        chatSession.release()\\n"
-    "                    }",
+    '                    } else {\n'
+    '                        Log.d(TAG, "Final cleanup: Resetting and releasing non-LLM session")\n'
+    '                        chatSession.reset()\n'
+    '                        chatSession.release()\n'
+    '                    }',
+    '                    } else if (chatSession is GgufChatSession) {\n'
+    '                        GgufApiSessionRegistry.detachChat(chatSession as GgufChatSession)\n'
+    '                    } else {\n'
+    '                        Log.d(TAG, "Final cleanup: Resetting and releasing non-LLM session")\n'
+    '                        chatSession.reset()\n'
+    '                        chatSession.release()\n'
+    '                    }',
     "ChatPresenter GGUF owner release"
 )
 replace_once(
     presenter,
-    "    private fun destroyCurrentSession() {\\n"
-    "        if (::chatSession.isInitialized) {\\n"
-    "            chatSession.reset()\\n"
-    "            if (chatSession is com.alibaba.mnnllm.android.llm.LlmSession) {\\n"
-    "                ServiceLocator.getLlmRuntimeController().releaseSession()\\n"
-    "            } else {\\n"
-    "                chatSession.release()\\n"
-    "            }\\n"
-    "        }\\n"
-    "    }",
-    "    private fun destroyCurrentSession() {\\n"
-    "        if (::chatSession.isInitialized) {\\n"
-    "            if (chatSession is GgufChatSession) {\\n"
-    "                GgufApiSessionRegistry.detachChat(chatSession as GgufChatSession)\\n"
-    "            } else {\\n"
-    "                chatSession.reset()\\n"
-    "                if (chatSession is com.alibaba.mnnllm.android.llm.LlmSession) {\\n"
-    "                    ServiceLocator.getLlmRuntimeController().releaseSession()\\n"
-    "                } else {\\n"
-    "                    chatSession.release()\\n"
-    "                }\\n"
-    "            }\\n"
-    "        }\\n"
-    "    }",
+    '    private fun destroyCurrentSession() {\n'
+    '        if (::chatSession.isInitialized) {\n'
+    '            chatSession.reset()\n'
+    '            if (chatSession is com.alibaba.mnnllm.android.llm.LlmSession) {\n'
+    '                ServiceLocator.getLlmRuntimeController().releaseSession()\n'
+    '            } else {\n'
+    '                chatSession.release()\n'
+    '            }\n'
+    '        }\n'
+    '    }',
+    '    private fun destroyCurrentSession() {\n'
+    '        if (::chatSession.isInitialized) {\n'
+    '            if (chatSession is GgufChatSession) {\n'
+    '                GgufApiSessionRegistry.detachChat(chatSession as GgufChatSession)\n'
+    '            } else {\n'
+    '                chatSession.reset()\n'
+    '                if (chatSession is com.alibaba.mnnllm.android.llm.LlmSession) {\n'
+    '                    ServiceLocator.getLlmRuntimeController().releaseSession()\n'
+    '                } else {\n'
+    '                    chatSession.release()\n'
+    '                }\n'
+    '            }\n'
+    '        }\n'
+    '    }',
     "ChatPresenter GGUF model-switch owner release"
 )
 
