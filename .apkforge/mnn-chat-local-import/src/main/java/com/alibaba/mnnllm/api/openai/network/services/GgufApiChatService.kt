@@ -1,6 +1,9 @@
 package com.alibaba.mnnllm.api.openai.network.services
 
 import OpenAIChatRequest
+import com.alibaba.mnnllm.api.openai.network.compat.AnthropicAdapter
+import com.alibaba.mnnllm.api.openai.network.compat.AnthropicMessagesRequest
+import com.alibaba.mnnllm.api.openai.network.compat.AnthropicUsage
 import MultiModalContent
 import OpenAITextContent
 import TextContent
@@ -86,6 +89,175 @@ class GgufApiChatService {
                 mapOf("error" to mapOf("message" to (error.message ?: "GGUF request queue unavailable.")))
             )
         }
+    }
+
+    suspend fun processAnthropicMessages(
+        call: ApplicationCall,
+        request: AnthropicMessagesRequest,
+        traceId: String,
+        modelId: String,
+        session: GgufChatSession
+    ) {
+        if (request.messages.any { message -> message.content.any { it.type != "text" } }) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                mapOf(
+                    "type" to "error",
+                    "error" to mapOf(
+                        "type" to "invalid_request_error",
+                        "message" to "当前 GGUF API 仅支持纯文本消息，图片、音频和文件输入暂不支持。"
+                    )
+                )
+            )
+            return
+        }
+        val openAiRequest = AnthropicAdapter.toOpenAIRequest(request).copy(
+            max_tokens = request.max_tokens
+        )
+        val prompt = try {
+            buildPrompt(openAiRequest)
+        } catch (error: Exception) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                mapOf(
+                    "type" to "error",
+                    "error" to mapOf("type" to "invalid_request_error", "message" to (error.message ?: "Invalid request"))
+                )
+            )
+            return
+        }
+        val maxTokens = (request.max_tokens ?: 512).coerceIn(1, MAX_COMPLETION_TOKENS)
+        val requestId = UUID.randomUUID().toString()
+        try {
+            requestQueue.submitRequest(
+                requestId = requestId,
+                traceId = traceId,
+                task = {
+                    try {
+                        if (request.stream == true) {
+                            streamAnthropicResponse(call, session, modelId, prompt, maxTokens)
+                        } else {
+                            nonStreamAnthropicResponse(call, session, modelId, prompt, maxTokens)
+                        }
+                    } catch (error: Exception) {
+                        call.respond(
+                            HttpStatusCode.InternalServerError,
+                            mapOf(
+                                "type" to "error",
+                                "error" to mapOf(
+                                    "type" to "api_error",
+                                    "message" to (error.message ?: "GGUF inference failed")
+                                )
+                            )
+                        )
+                    }
+                }
+            )
+        } catch (error: Exception) {
+            call.respond(
+                HttpStatusCode.ServiceUnavailable,
+                mapOf(
+                    "type" to "error",
+                    "error" to mapOf("type" to "api_error", "message" to (error.message ?: "GGUF request queue unavailable"))
+                )
+            )
+        }
+    }
+
+    private suspend fun nonStreamAnthropicResponse(
+        call: ApplicationCall,
+        session: GgufChatSession,
+        modelId: String,
+        prompt: ApiPrompt,
+        maxTokens: Int
+    ) {
+        val text = StringBuilder()
+        val metrics = session.generateApiRequest(
+            prompt.system,
+            prompt.prompt,
+            maxTokens,
+            object : GenerateProgressListener {
+                override fun onProgress(progress: String?): Boolean {
+                    if (progress != null) text.append(progress)
+                    return false
+                }
+            }
+        )
+        val usage = AnthropicUsage(
+            input_tokens = (metrics["prompt_len"] as? Long)?.toInt() ?: 0,
+            output_tokens = (metrics["decode_len"] as? Long)?.toInt() ?: 0
+        )
+        val response = AnthropicAdapter.createNonStreamResponse(
+            responseId = "msg_\${System.currentTimeMillis()}",
+            model = modelId,
+            text = text.toString(),
+            usage = usage
+        )
+        call.respondText(response, ContentType.Application.Json)
+    }
+
+    private suspend fun streamAnthropicResponse(
+        call: ApplicationCall,
+        session: GgufChatSession,
+        modelId: String,
+        prompt: ApiPrompt,
+        maxTokens: Int
+    ) {
+        val responseId = "msg_\${System.currentTimeMillis()}"
+        call.respond(SSEServerContent(call) {
+            heartbeat {
+                period = 3.seconds
+                event = ServerSentEvent(comments = "keep-alive")
+            }
+            send(ServerSentEvent(
+                event = "message_start",
+                data = """{"type":"message_start","message":{"id":"$responseId","type":"message","role":"assistant","model":"$modelId","content":[],"usage":{"input_tokens":0,"output_tokens":0}}}"""
+            ))
+            send(ServerSentEvent(
+                event = "content_block_start",
+                data = """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"""
+            ))
+            val channel = Channel<ServerSentEvent>(Channel.UNLIMITED)
+            launch(Dispatchers.IO) {
+                try {
+                    val metrics = session.generateApiRequest(
+                        prompt.system,
+                        prompt.prompt,
+                        maxTokens,
+                        object : GenerateProgressListener {
+                            override fun onProgress(progress: String?): Boolean {
+                                if (progress.isNullOrEmpty()) return false
+                                val data = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":\${org.json.JSONObject.quote(progress)}}}"""
+                                return channel.trySend(ServerSentEvent(event = "content_block_delta", data = data)).isFailure
+                            }
+                        }
+                    )
+                    val inputTokens = (metrics["prompt_len"] as? Long)?.toInt() ?: 0
+                    val outputTokens = (metrics["decode_len"] as? Long)?.toInt() ?: 0
+                    channel.send(ServerSentEvent(
+                        event = "content_block_stop",
+                        data = """{"type":"content_block_stop","index":0}"""
+                    ))
+                    channel.send(ServerSentEvent(
+                        event = "message_delta",
+                        data = """{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":$inputTokens,"output_tokens":$outputTokens}}"""
+                    ))
+                    channel.send(ServerSentEvent(
+                        event = "message_stop",
+                        data = """{"type":"message_stop"}"""
+                    ))
+                } catch (error: Exception) {
+                    val message = org.json.JSONObject.quote(error.message ?: "GGUF inference failed")
+                    channel.trySend(ServerSentEvent(
+                        event = "error",
+                        data = """{"type":"error","error":{"type":"api_error","message":$message}}"""
+                    ))
+                } finally {
+                    channel.close()
+                }
+            }
+            for (event in channel) send(event)
+        })
     }
 
     private fun buildPrompt(request: OpenAIChatRequest): ApiPrompt {
