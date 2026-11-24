@@ -22,6 +22,14 @@ if "import com.alibaba.mnnllm.android.modelist.GgufChatSession" not in source:
         import_anchor + "import com.alibaba.mnnllm.android.modelist.GgufChatSession\n",
         1
     )
+if "import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry" not in source:
+    source = source.replace(
+        import_anchor + "import com.alibaba.mnnllm.android.modelist.GgufChatSession\n",
+        import_anchor
+        + "import com.alibaba.mnnllm.android.modelist.GgufChatSession\n"
+        + "import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry\n",
+        1
+    )
 old_session_branch = '''        if (ModelTypeUtils.isDiffusionModel(modelName) || ModelTypeUtils.isSanaModel(modelName)) {
             val chatService = ChatService.provide()
             chatSession = chatService.createSession(
@@ -74,7 +82,19 @@ new_session_branch = '''        val ggufModelPath = intent.getStringExtra("ggufM
 '''
 if source.count(old_session_branch) != 1:
     raise SystemExit("ChatPresenter: original session factory block changed")
-presenter.write_text(source.replace(old_session_branch, new_session_branch, 1), encoding="utf-8")
+source = source.replace(old_session_branch, new_session_branch, 1)
+registry_anchor = "        sessionId = chatSession.sessionId\\n"
+if source.count(registry_anchor) != 1:
+    raise SystemExit("ChatPresenter: session assignment anchor not unique")
+source = source.replace(
+    registry_anchor,
+    registry_anchor
+    + "        if (chatSession is GgufChatSession) {\\n"
+    + "            GgufApiSessionRegistry.register(modelId, chatSession)\\n"
+    + "        }\\n",
+    1
+)
+presenter.write_text(source, encoding="utf-8")
 
 activity = java / "chat/ChatActivity.kt"
 source = activity.read_text(encoding="utf-8")
