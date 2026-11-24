@@ -131,11 +131,47 @@ class GgufChatSession(
         }
     }
 
+    /**
+     * Stateless OpenAI API turn. setSystemPrompt() resets llama.cpp's prior chat/KV state,
+     * then the complete request transcript is sent as one text-only user prompt.
+     * Token usage is reported as a character-count estimate because this Android binding
+     * does not currently expose the tokenizer count.
+     */
+    fun generateApiRequest(
+        systemPrompt: String,
+        prompt: String,
+        maxNewTokens: Int,
+        progressListener: GenerateProgressListener
+    ): HashMap<String, Any> = synchronized(lock) {
+        val engine = ensureLoaded()
+        val startedAt = System.nanoTime()
+        val rawResponse = StringBuilder()
+        runBlocking(Dispatchers.IO) {
+            engine.setSystemPrompt(
+                systemPrompt.takeIf { it.isNotBlank() } ?: DEFAULT_API_SYSTEM_PROMPT
+            )
+            engine.sendUserPrompt(prompt, maxNewTokens.coerceIn(1, MAX_API_TOKENS))
+                .takeWhile { token ->
+                    rawResponse.append(token)
+                    !progressListener.onProgress(token)
+                }
+                .collect { }
+        }
+        val elapsedMicros = ((System.nanoTime() - startedAt) / 1_000L).coerceAtLeast(0L)
+        hashMapOf(
+            "response" to rawResponse.toString(),
+            "prompt_len" to prompt.length.toLong(),
+            "decode_len" to rawResponse.length.toLong(),
+            "prefill_time" to 0L,
+            "decode_time" to elapsedMicros
+        )
+    }
+
     override fun generate(
         prompt: String,
         params: Map<String, Any>,
         progressListener: GenerateProgressListener
-    ): HashMap<String, Any> {
+    ): HashMap<String, Any> = synchronized(lock) {
         val engine = ensureLoaded()
         val maxNewTokens = (params["max_new_tokens"] as? Number)?.toInt()
             ?.coerceAtLeast(1) ?: 512
@@ -150,7 +186,7 @@ class GgufChatSession(
                 .collect { }
         }
         val elapsedMicros = ((System.nanoTime() - startedAt) / 1_000L).coerceAtLeast(0L)
-        return hashMapOf(
+        hashMapOf(
             "response" to rawResponse.toString(),
             "prompt_len" to 0L,
             "decode_len" to rawResponse.length.toLong(),
@@ -182,7 +218,8 @@ class GgufChatSession(
                     old.cleanUp()
                 }
             }
-            old.destroy()
+            // The llama.cpp engine is a process-wide singleton. Keep it initialized so
+            // a later chat/API request can load another model into the same engine.
         } catch (error: Exception) {
             Log.w(TAG, "Error releasing GGUF engine", error)
         }
@@ -211,5 +248,7 @@ class GgufChatSession(
         private const val MAX_HISTORY_TURNS = 10
         private const val MAX_CHARS_PER_HISTORY_TURN = 1200
         private const val MAX_HISTORY_CONTEXT_CHARS = 6000
+        private const val MAX_API_TOKENS = 8192
+        private const val DEFAULT_API_SYSTEM_PROMPT = "你是一个有帮助的中文 AI 助手。请清晰、准确地回答问题。"
     }
 }
