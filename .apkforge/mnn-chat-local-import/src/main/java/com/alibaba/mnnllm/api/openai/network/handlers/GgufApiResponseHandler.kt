@@ -125,6 +125,17 @@ class GgufApiResponseHandler {
         return PreparedPrompt(system, history, normalized[latestUserIndex].second)
     }
 
+    private fun buildApiSystemPrompt(prompt: PreparedPrompt): String = buildString {
+        append(prompt.systemPrompt?.takeIf { it.isNotBlank() } ?: "你是一个有帮助的 AI 助手。")
+        if (prompt.history.isNotEmpty()) {
+            append("\n\n以下是本次 API 请求提供的历史对话，请仅作为上下文：\n")
+            prompt.history.takeLast(20).forEach { (role, content) ->
+                val speaker = if (role == "assistant") "助手" else "用户"
+                append(speaker).append("：").append(content).append("\n")
+            }
+        }
+    }
+
     private suspend fun respondOpenAI(
         call: ApplicationCall,
         session: GgufChatSession,
@@ -145,11 +156,10 @@ class GgufApiResponseHandler {
 
     private fun generateText(session: GgufChatSession, prompt: PreparedPrompt, maxTokens: Int): String {
         val output = StringBuilder()
-        session.generateForApi(
-            systemPrompt = prompt.systemPrompt,
-            history = prompt.history,
-            latestUserMessage = prompt.latestUserMessage,
-            params = mapOf("max_new_tokens" to maxTokens.coerceIn(1, 8192)),
+        session.generateApiRequest(
+            systemPrompt = buildApiSystemPrompt(prompt),
+            prompt = prompt.latestUserMessage,
+            maxNewTokens = maxTokens.coerceIn(1, 8192),
             progressListener = object : GenerateProgressListener {
                 override fun onProgress(progress: String?): Boolean {
                     if (progress != null) output.append(progress)
@@ -178,12 +188,11 @@ class GgufApiResponseHandler {
             val channel = Channel<ServerSentEvent>(Channel.UNLIMITED)
             launch(Dispatchers.IO) {
                 try {
-                    session.generateForApi(
-                        systemPrompt = prompt.systemPrompt,
-                        history = prompt.history,
-                        latestUserMessage = prompt.latestUserMessage,
-                        params = mapOf("max_new_tokens" to maxTokens.coerceIn(1, 8192)),
-                        progressListener = object : GenerateProgressListener {
+                    session.generateApiRequest(
+            systemPrompt = buildApiSystemPrompt(prompt),
+            prompt = prompt.latestUserMessage,
+            maxNewTokens = maxTokens.coerceIn(1, 8192),
+            progressListener = object : GenerateProgressListener {
                             override fun onProgress(progress: String?): Boolean {
                                 if (progress.isNullOrEmpty()) return false
                                 val json = formatter.createDeltaResponse(responseId, created, progress, false)
@@ -233,12 +242,11 @@ class GgufApiResponseHandler {
             val channel = Channel<ServerSentEvent>(Channel.UNLIMITED)
             launch(Dispatchers.IO) {
                 try {
-                    session.generateForApi(
-                        systemPrompt = prompt.systemPrompt,
-                        history = prompt.history,
-                        latestUserMessage = prompt.latestUserMessage,
-                        params = mapOf("max_new_tokens" to maxTokens.coerceIn(1, 8192)),
-                        progressListener = object : GenerateProgressListener {
+                    session.generateApiRequest(
+            systemPrompt = buildApiSystemPrompt(prompt),
+            prompt = prompt.latestUserMessage,
+            maxNewTokens = maxTokens.coerceIn(1, 8192),
+            progressListener = object : GenerateProgressListener {
                             override fun onProgress(progress: String?): Boolean {
                                 if (progress.isNullOrEmpty()) return false
                                 val data = """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":${JSONObject.quote(progress)}}}"""
