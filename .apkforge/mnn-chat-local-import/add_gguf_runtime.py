@@ -260,6 +260,23 @@ copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/AiChat.kt"
 copy(llama / "examples/llama.android/lib/src/main/java/com/arm/aichat/InferenceEngine.kt", java / "com/arm/aichat/InferenceEngine.kt")
 interface_path = java / "com/arm/aichat/InferenceEngine.kt"
 interface_source = interface_path.read_text(encoding="utf-8")
+system_prompt_anchor = """    suspend fun setSystemPrompt(systemPrompt: String)
+
+    /**
+     * Sends a user prompt"""
+system_prompt_replacement = """    suspend fun setSystemPrompt(systemPrompt: String)
+
+    /**
+     * Clears the current chat/KV state and installs a new system prompt.
+     * This can be called between API requests.
+     */
+    suspend fun resetConversation(systemPrompt: String)
+
+    /**
+     * Sends a user prompt"""
+if interface_source.count(system_prompt_anchor) != 1:
+    raise SystemExit("Could not add repeatable GGUF conversation reset to InferenceEngine")
+interface_source = interface_source.replace(system_prompt_anchor, system_prompt_replacement, 1)
 old_exception = "class UnsupportedArchitectureException : Exception()"
 new_exception = "class UnsupportedArchitectureException(message: String? = null) : Exception(message)"
 if interface_source.count(old_exception) != 1:
