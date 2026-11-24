@@ -328,7 +328,42 @@ if "ReportLlmSetConfigToFirebase" in jni or "g_jvm" in jni:
     raise SystemExit("Native Crashlytics JNI forwarding symbols remain")
 jni_path.write_text(jni, encoding="utf-8")
 
-# 8. Remove benchmark leaderboard upload and JSONL file upload paths.
+# Remove the now-meaningless crash-diagnostics consent toggle from Settings.
+settings_fragment = java / "mainsettings/MainSettingsFragment.kt"
+settings_source = settings_fragment.read_text(encoding="utf-8")
+settings_source = settings_source.replace(
+    "import com.alibaba.mnnllm.android.privacy.PrivacyPolicyManager\n", ""
+)
+settings_source = settings_source.replace(
+    "import com.alibaba.mnnllm.android.MnnLlmApplication\n", ""
+)
+for line in [
+    "    private var suppressCrashDiagnosticsCallback = false\n",
+    "    private var crashDiagnosticsToggleInProgress = false\n",
+    "    private var crashDiagnosticsDialogShowing = false\n",
+    "        setupCrashDiagnostics()\n",
+]:
+    settings_source = settings_source.replace(line, "")
+settings_source = block(
+    settings_source,
+    "    private fun setupCrashDiagnostics() {",
+    "    private fun setupUpdateAndVersion() {",
+    "    private fun setupUpdateAndVersion() {",
+    "MainSettingsFragment crash-consent controls"
+)
+settings_fragment.write_text(settings_source, encoding="utf-8")
+
+settings_layout = app / "app/src/main/res/layout/fragment_main_settings.xml"
+settings_xml = settings_layout.read_text(encoding="utf-8")
+settings_xml = sub_once(
+    settings_xml,
+    r'\s*<com\.alibaba\.mnnllm\.android\.modelsettings\.SettingsItemView\b(?=[^>]*android:id="@\+id/item_crash_diagnostics")[^>]*/>',
+    "", "Settings crash-diagnostics switch"
+)
+settings_layout.write_text(settings_xml, encoding="utf-8")
+
+# 9. Remove benchmark leaderboard upload and JSONL file upload paths.
+
 # Benchmarking remains local; users may still choose to share a rendered result image themselves.
 presenter_path = java / "benchmark/BenchmarkPresenter.kt"
 presenter = presenter_path.read_text(encoding="utf-8")
