@@ -91,6 +91,8 @@ source = source.replace(
     registry_anchor
     + "        if (chatSession is GgufChatSession) {\n"
     + "            GgufApiSessionRegistry.register(modelId, chatSession)\n"
+    + "        } else {\n"
+    + "            GgufApiSessionRegistry.clear()\n"
     + "        }\n",
     1
 )
