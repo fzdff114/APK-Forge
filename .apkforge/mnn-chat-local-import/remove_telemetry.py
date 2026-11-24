@@ -294,6 +294,23 @@ if popup.count(old) != 1:
     raise SystemExit("PopupWindowHelper report-menu anchor missing")
 popup_path.write_text(popup.replace(old, new, 1), encoding="utf-8")
 
+# Remove call sites in the model-session native implementation as well.
+session_cpp = app / "app/src/main/cpp/llm_session.cpp"
+session_source = session_cpp.read_text(encoding="utf-8")
+session_source = session_source.replace(
+    "void ReportLlmSetConfigToFirebase(const std::string& stage, const std::string& config_json);\\n",
+    ""
+)
+session_source, call_count = re.subn(
+    r"^\\s*ReportLlmSetConfigToFirebase\\([^;]*\\);\\s*\\n",
+    "",
+    session_source,
+    flags=re.MULTILINE
+)
+if call_count != 3 or "ReportLlmSetConfigToFirebase" in session_source:
+    raise SystemExit(f"Expected to remove 3 native crash-report call sites; removed {call_count}")
+session_cpp.write_text(session_source, encoding="utf-8")
+
 # Remove JNI forwarding of model IDs and full configuration JSON to Crashlytics.
 jni_path = app / "app/src/main/cpp/llm_mnn_jni.cpp"
 jni = jni_path.read_text(encoding="utf-8")
