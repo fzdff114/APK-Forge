@@ -43,7 +43,7 @@ if enable_count != 1:
 # Remove only the Firebase conditional plugin block. Preserve Markwon, compiler,
 # Android SDK, and other unrelated Gradle variables that follow it.
 gradle, firebase_block_count = re.subn(
-    r"(?ms)^if \\(enableFirebase && hasGoogleServicesConfig\\) \\{\\n.*?^\\}\\n",
+    r"(?ms)^if \(enableFirebase && hasGoogleServicesConfig\) \{\n.*?^\}\n",
     "",
     gradle,
     count=1
