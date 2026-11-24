@@ -376,6 +376,7 @@ reset_impl = """    override suspend fun resetConversation(systemPrompt: String)
             _readyForSystemPrompt = false
             _state.value = InferenceEngine.State.ModelReady
         }
+"""
 if engine.count(reset_anchor) != 1:
     raise SystemExit("Could not insert repeatable GGUF conversation reset implementation")
 engine = engine.replace(reset_anchor, reset_impl, 1)
