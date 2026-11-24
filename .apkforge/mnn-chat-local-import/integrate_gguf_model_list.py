@@ -110,6 +110,7 @@ router_source = router.read_text(encoding="utf-8")
 import_anchor = "import com.alibaba.mnnllm.android.model.ModelUtils\n"
 if "import com.alibaba.mnnllm.android.modelist.LocalGgufModelLibrary\n" not in router_source:
     router_source = router_source.replace(import_anchor, import_anchor + "import com.alibaba.mnnllm.android.modelist.LocalGgufModelLibrary\n", 1)
+router.write_text(router_source, encoding="utf-8")
 run_anchor = '''    fun startRun(context: Context, modelIdParam: String, destModelDir:String?, sessionId: String?) {
         Log.d(TAG, "startRun modelIdParam: $modelIdParam destModelDir: $destModelDir sessionId: $sessionId")
 '''
