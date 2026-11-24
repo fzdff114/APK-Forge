@@ -65,11 +65,11 @@ for line in [
 
 route_old = "        MNNChatService.processChatCompletion(call, chatRequest, traceId)"
 route_new = '''        val requestedModel = chatRequest.model?.trim()
-        val selectedGgufModel = when {
-            requestedModel?.startsWith("local-gguf/") == true -> requestedModel
-            requestedModel.isNullOrBlank() || requestedModel == "mnn-local" ->
-                GgufApiSessionRegistry.currentModelId()
-            else -> null
+        val selectedGgufModel = if (requestedModel?.startsWith("local-gguf/") == true) {
+            requestedModel
+        } else {
+            // The API service exposes the one active model, even if a client uses a friendly alias.
+            GgufApiSessionRegistry.currentModelId()
         }
         if (selectedGgufModel != null) {
             val ggufSession = GgufApiSessionRegistry.getActiveSession(selectedGgufModel)
@@ -226,11 +226,11 @@ anthropic_anchor = """    ) {
         val requestId = UUID.randomUUID().toString()"""
 anthropic_replacement = """    ) {
         val requestedModel = request.model?.trim()
-        val selectedGgufModel = when {
-            requestedModel?.startsWith("local-gguf/") == true -> requestedModel
-            requestedModel.isNullOrBlank() || requestedModel == "mnn-local" ->
-                GgufApiSessionRegistry.currentModelId()
-            else -> null
+        val selectedGgufModel = if (requestedModel?.startsWith("local-gguf/") == true) {
+            requestedModel
+        } else {
+            // The API service exposes the one active model, even if a client uses a friendly alias.
+            GgufApiSessionRegistry.currentModelId()
         }
         if (selectedGgufModel != null) {
             val ggufSession = GgufApiSessionRegistry.getActiveSession(selectedGgufModel)
