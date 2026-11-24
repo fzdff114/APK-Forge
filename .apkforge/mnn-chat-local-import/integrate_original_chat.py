@@ -174,7 +174,7 @@ menu_new = '''        menu.findItem(R.id.menu_item_model_settings).isVisible = !
             benchmarkModule.enabled && !isGgufSession
         // GGUF currently has no trustworthy MNN-compatible prefill/decode token counters.
         menu.findItem(R.id.show_performance_metrics).isVisible = !isGgufSession
-        // These entries depend on the MNN API/config backend and are not available to GGUF yet.
+        // GGUF uses the app-level OpenAI API adapter; model-specific MNN config remains hidden.
         menu.findItem(R.id.menu_item_api_settings).isVisible = true
         menu.findItem(R.id.menu_item_api_console).isVisible = true
         menu.findItem(R.id.menu_item_config_info).isVisible = !isGgufSession
