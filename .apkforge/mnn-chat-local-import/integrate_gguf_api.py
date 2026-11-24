@@ -65,8 +65,14 @@ for line in [
 
 route_old = "        MNNChatService.processChatCompletion(call, chatRequest, traceId)"
 route_new = '''        val requestedModel = chatRequest.model?.trim()
-        if (requestedModel?.startsWith("local-gguf/") == true) {
-            val ggufSession = GgufApiSessionRegistry.getActiveSession(requestedModel)
+        val selectedGgufModel = when {
+            requestedModel?.startsWith("local-gguf/") == true -> requestedModel
+            requestedModel.isNullOrBlank() || requestedModel == "mnn-local" ->
+                GgufApiSessionRegistry.currentModelId()
+            else -> null
+        }
+        if (selectedGgufModel != null) {
+            val ggufSession = GgufApiSessionRegistry.getActiveSession(selectedGgufModel)
             if (ggufSession == null) {
                 call.respond(
                     HttpStatusCode.ServiceUnavailable,
@@ -76,7 +82,7 @@ route_new = '''        val requestedModel = chatRequest.model?.trim()
                 )
             } else {
                 GgufApiChatService().processChatCompletion(
-                    call, chatRequest, traceId, requestedModel, ggufSession
+                    call, chatRequest, traceId, selectedGgufModel, ggufSession
                 )
             }
         } else {
