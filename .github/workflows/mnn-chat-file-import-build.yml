@@ -267,7 +267,10 @@ jobs:
           test ! -e "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/GgufChatActivity.kt"
           grep -n 'local-gguf/' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/ModelListManager.kt"
           grep -n 'LocalImportedModelDeleter' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/modelist/ModelItemHolder.kt"
-          grep -q 'ggufModelPath' "$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/chat/ChatRouter.kt"
+          ROUTER="$APP_ROOT/app/src/main/java/com/alibaba/mnnllm/android/chat/ChatRouter.kt"
+          grep -q 'import com.alibaba.mnnllm.android.modelist.LocalGgufModelLibrary' "$ROUTER"
+          grep -q 'LocalGgufModelLibrary.findCompleteEntry' "$ROUTER"
+          grep -q 'ggufModelPath' "$ROUTER"
       - name: Add Maven Central mirror fallback for CI
         shell: bash
         run: |
