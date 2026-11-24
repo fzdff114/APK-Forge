@@ -18,6 +18,12 @@ object GgufApiSessionRegistry {
         activeSession = session
     }
 
+    @Synchronized
+    fun clear() {
+        activeSession = null
+        activeModelId = null
+    }
+
     fun currentModelId(): String? = activeModelId
 
     fun getActiveSession(modelId: String): GgufChatSession? {
