@@ -212,3 +212,54 @@ replace_once(
 
 print("GGUF OpenAI API requests now resolve to the registered ChatSession.")
 print("The API foreground service retains the GGUF engine while it is running.")
+
+# Route Anthropic /v1/messages requests to the same text-only GGUF engine.
+anthropic = java / "api/openai/network/services/AnthropicMessagesService.kt"
+anthropic_import = "import com.alibaba.mnnllm.android.MnnLlmApplication\n"
+replace_once(
+    anthropic,
+    anthropic_import,
+    anthropic_import + "import com.alibaba.mnnllm.android.modelist.GgufApiSessionRegistry\n",
+    "Anthropic service GGUF registry import"
+)
+anthropic_anchor = """    ) {
+        val requestId = UUID.randomUUID().toString()"""
+anthropic_replacement = """    ) {
+        val requestedModel = request.model?.trim()
+        val selectedGgufModel = when {
+            requestedModel?.startsWith("local-gguf/") == true -> requestedModel
+            requestedModel.isNullOrBlank() || requestedModel == "mnn-local" ->
+                GgufApiSessionRegistry.currentModelId()
+            else -> null
+        }
+        if (selectedGgufModel != null) {
+            val ggufSession = GgufApiSessionRegistry.getActiveSession(selectedGgufModel)
+            if (ggufSession == null) {
+                call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    mapOf(
+                        "type" to "error",
+                        "error" to mapOf(
+                            "type" to "api_error",
+                            "message" to "请求的 GGUF 模型当前不可用，请先在 MNN Chat 中打开该模型。"
+                        )
+                    )
+                )
+            } else {
+                GgufApiChatService().processAnthropicMessages(
+                    call, request, traceId, selectedGgufModel, ggufSession
+                )
+            }
+            return
+        }
+
+        val requestId = UUID.randomUUID().toString()"""
+replace_once(
+    anthropic,
+    anthropic_anchor,
+    anthropic_replacement,
+    "Anthropic GGUF /v1/messages route"
+)
+
+print("Anthropic /v1/messages now uses the active GGUF text session.")
+
