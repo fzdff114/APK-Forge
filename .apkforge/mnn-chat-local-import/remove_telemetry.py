@@ -10,6 +10,11 @@ def block(source, start, end, replacement, label):
     b = source.find(end, a + len(start)) if a >= 0 else -1
     if a < 0 or b < 0:
         raise SystemExit(f"{label}: source anchor missing")
+    # When the replacement is the exact end anchor, the source suffix already
+    # contains that anchor. Do not append it twice (duplicate companion objects
+    # caused unbalanced Kotlin braces in the previous build).
+    if replacement.strip() == end.strip():
+        return source[:a] + source[b:]
     return source[:a] + replacement + source[b:]
 
 def sub_once(source, pattern, replacement, label, flags=re.DOTALL):
