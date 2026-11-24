@@ -137,7 +137,7 @@ application = application.replace("        applyCrashReportingConsent()\n", "")
 if "    fun applyCrashReportingConsent() {" in application:
     application = block(
         application, "    fun applyCrashReportingConsent() {",
-        "    companion object {", "    companion object {",
+        "    companion object {", "",
         "MnnLlmApplication consent updater"
     )
 application_path.write_text(application, encoding="utf-8")
@@ -192,7 +192,7 @@ debug = sub_once(
 )
 debug = block(
     debug, "    private fun testCrashlyticsNonFatal() {",
-    "    private fun startTtsTest() {", "    private fun startTtsTest() {",
+    "    private fun startTtsTest() {", "",
     "DebugActivity crash-test functions"
 )
 if "FirebaseCrashlytics" in debug or "Crashlytics" in debug:
@@ -246,7 +246,7 @@ main = sub_once(
 )
 main = block(
     main, "    private fun checkPrivacyPolicyAgreement() {",
-    "    companion object {", "    companion object {",
+    "    companion object {", "",
     "MainActivity crash-consent dialog"
 )
 main_path.write_text(main, encoding="utf-8")
@@ -363,7 +363,7 @@ settings_source = block(
     settings_source,
     "    private fun setupCrashDiagnostics() {",
     "    private fun setupUpdateAndVersion() {",
-    "    private fun setupUpdateAndVersion() {",
+    "",
     "MainSettingsFragment crash-consent controls"
 )
 settings_fragment.write_text(settings_source, encoding="utf-8")
@@ -394,7 +394,7 @@ presenter = block(
     presenter,
     "    override fun onUploadToLeaderboardClicked() {",
     "    override fun getCurrentState(): BenchmarkState {",
-    "    override fun getCurrentState(): BenchmarkState {",
+    "",
     "BenchmarkPresenter leaderboard upload handler"
 )
 presenter = presenter.replace("// Save results for leaderboard upload", "// Keep benchmark results locally for the result card")
@@ -421,7 +421,7 @@ fragment = block(
     fragment,
     "    override fun uploadToLeaderboard() {",
     "    private fun createBitmapFromView(view: View): Bitmap {",
-    "    private fun createBitmapFromView(view: View): Bitmap {",
+    "",
     "BenchmarkFragment leaderboard upload UI handlers"
 )
 fragment = fragment.replace(
